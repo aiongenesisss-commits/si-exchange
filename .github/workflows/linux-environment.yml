@@ -44,3 +44,6 @@ jobs:
           docker image rm si-exchange-linux:local >/dev/null 2>&1 || true
           docker load --input dist/si-exchange-linux-bundle/si-exchange-image.tar
           docker run --rm si-exchange-linux:local python -c "from app.main import app; assert any(route.path == '/health' for route in app.routes); print('Imported bundle image starts and exposes health route.')"
+
+      - name: Verify PostgreSQL migration against an isolated temporary database
+        run: bash scripts/verify_postgres_migration.sh
