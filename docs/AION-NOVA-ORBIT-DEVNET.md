@@ -6,8 +6,8 @@ The repository now defines two separate local EVM development nodes:
 
 | Network | Proposed chain ID | Local JSON-RPC |
 |---|---:|---|
-| AION Nova | 71101 | http://127.0.0.1:8545 |
-| AION Orbit | 71102 | http://127.0.0.1:8546 |
+| AION Nova | 71101 | http://127.0.0.1:18545 |
+| AION Orbit | 71102 | http://127.0.0.1:18546 |
 
 These IDs are proposals and must be checked for collisions before any public launch. The nodes are independent disposable Anvil development chains. They are not BNB Smart Chain, do not inherit BNB Chain security, and do not provide public persistence or decentralized consensus.
 
