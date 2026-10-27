@@ -157,7 +157,11 @@ def get_markets():
                 "symbol": market.value,
                 "simulated_price_sar": fallback_price,
                 "is_live": False,
-                "price_source": "Fallback simulated price; live market data unavailable",
+                "price_source": (
+                    "AION AUTONOMOUS project token — simulated only; no verified deployment or live quote"
+                    if market == Market.AION_SAR
+                    else "Fallback simulated price; live market data unavailable"
+                ),
                 "updated_at": None,
                 "trading_mode": "simulation_only",
             })
