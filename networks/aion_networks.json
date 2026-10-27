@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "status": "configuration_only",
+  "warning": "These networks are not live. RPC URLs and token addresses must be supplied and independently verified before the status can change.",
+  "networks": [
+    {
+      "key": "nova",
+      "name": "AION Nova",
+      "chain_id": 71101,
+      "native_currency": { "name": "AION Nova Gas", "symbol": "ANOVA", "decimals": 18 },
+      "rpc_url_env": "AION_NOVA_RPC_URL",
+      "explorer_url_env": "AION_NOVA_EXPLORER_URL",
+      "token_address_env": "AION_NOVA_TOKEN_ADDRESS",
+      "status": "planned",
+      "purpose": "Application development and contract testing"
+    },
+    {
+      "key": "orbit",
+      "name": "AION Orbit",
+      "chain_id": 71102,
+      "native_currency": { "name": "AION Orbit Gas", "symbol": "AORB", "decimals": 18 },
+      "rpc_url_env": "AION_ORBIT_RPC_URL",
+      "explorer_url_env": "AION_ORBIT_EXPLORER_URL",
+      "token_address_env": "AION_ORBIT_TOKEN_ADDRESS",
+      "status": "planned",
+      "purpose": "Staging and production-readiness evaluation"
+    }
+  ],
+  "free_deployments": {
+    "status": "not_enabled",
+    "limit_per_network": 50,
+    "requires_sponsored_gas": true,
+    "requires_rate_limits": true,
+    "requires_auditable_counter": true
+  }
+}
