@@ -1,8 +1,5 @@
 services:
   si-exchange:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: si-exchange-linux:local
     container_name: si-exchange-demo
     ports:
