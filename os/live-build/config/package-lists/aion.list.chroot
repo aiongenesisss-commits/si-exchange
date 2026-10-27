@@ -1,0 +1,10 @@
+systemd-sysv
+systemd
+live-boot
+ifupdown
+iproute2
+ca-certificates
+python3
+python3-venv
+python3-pip
+curl

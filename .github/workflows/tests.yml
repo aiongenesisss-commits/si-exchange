@@ -8,6 +8,22 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/si_exchange_test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: si_exchange_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d si_exchange_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

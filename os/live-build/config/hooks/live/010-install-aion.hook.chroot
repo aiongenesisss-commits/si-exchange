@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+APP=/opt/aion/si-exchange
+python3 -m venv /opt/aion/venv
+/opt/aion/venv/bin/python -m pip install --no-index --find-links=/opt/aion/wheelhouse -r /opt/aion/requirements-os.txt
+getent group aion >/dev/null || groupadd --system aion
+id aion >/dev/null 2>&1 || useradd --system --gid aion --home-dir /var/lib/aion --create-home --shell /usr/sbin/nologin aion
+mkdir -p /var/lib/aion
+chown -R root:root "$APP" /opt/aion/venv
+chmod -R a-w "$APP"
+chown aion:aion /var/lib/aion
+chmod 0750 /var/lib/aion
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /etc/systemd/system/aion-exchange.service /etc/systemd/system/multi-user.target.wants/aion-exchange.service
