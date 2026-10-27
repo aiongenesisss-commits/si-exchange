@@ -2,7 +2,7 @@
 
 ## Current status
 
-This repository now contains a reproducible local smoke-test setup for two temporary Anvil EVM development chains:
+The repository contains a reproducible local smoke-test setup for two temporary Anvil EVM development chains:
 
 | Network | Chain ID | Local RPC |
 | --- | ---: | --- |
@@ -10,6 +10,8 @@ This repository now contains a reproducible local smoke-test setup for two tempo
 | AION Orbit | 71102 | http://127.0.0.1:8546 |
 
 These are **local development chains**, not public AION networks. They reset when their containers are removed. They have no public RPC endpoint, explorer, independent validators, persistent public operation, native production asset, or deployed AION token contract.
+
+The canonical registry is `networks/aion_networks.json`; the validation script is `scripts/validate_network_registry.py`.
 
 ## Start locally
 
@@ -19,10 +21,11 @@ From the repository root:
 
 ```bash
 docker compose -f infra/aion-devnets/compose.yaml up -d --wait
+python scripts/validate_network_registry.py
 python scripts/check_aion_devnets.py
 ```
 
-Expected checks report that Nova returns chain ID 71101 and Orbit returns chain ID 71102. The script also checks that the manifest does not falsely advertise public RPCs, token deployment, or a live free-deployment promotion.
+Expected checks report that Nova returns chain ID 71101 and Orbit returns chain ID 71102. The checker also verifies that the canonical registry does not falsely advertise public RPCs, explorers, token deployment, or an enabled free-deployment promotion.
 
 Stop and remove the temporary chains:
 
@@ -46,10 +49,10 @@ The same smoke test is configured in GitHub Actions in `.github/workflows/aion-d
 3. Provision persistent RPC and validator hosting, monitoring, rate limiting, backups, TLS, incident alerts, and an on-call process.
 4. Confirm a budget and ownership of all cloud resources before provisioning billable infrastructure.
 5. Publish stable public RPC URLs and block explorers only after health/security verification.
-6. Implement and audit the free-deployment promotion. Its scope (50 total or 50 per network), gas sponsor/relayer, abuse limits, counter, funding cap, and refund/incident policy remain undecided and disabled.
+6. Implement and audit the free-deployment promotion. It is currently disabled; the canonical registry specifies a proposed limit of 50 per network but sponsorship, anti-abuse limits, a counter, funding cap, and incident policy must be implemented and audited before advertising it.
 7. Audit and deploy the AION token only after the two networks have passed launch gates; verify each transaction and contract source independently.
 8. Do not enable real deposits, withdrawals, bridging, custody, or exchange settlement in SI Exchange as part of this devnet work.
 
 ## Source of truth
 
-`config/aion-networks.json` is intentionally explicit about the current non-production status. Change its production fields only alongside the corresponding deployment evidence and review.
+`networks/aion_networks.json` intentionally keeps both networks `planned`, with public RPC/explorer endpoints unset and no token contract claimed. Do not change that status until the corresponding public infrastructure and deployment evidence have been independently verified.
