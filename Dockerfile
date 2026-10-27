@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY app ./app
 COPY api ./api
 COPY tests ./tests
+COPY scripts ./scripts
 COPY pyproject.toml README.md ./
 
 # Image build is isolated; tests can be run with:
