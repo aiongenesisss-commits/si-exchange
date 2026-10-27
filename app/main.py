@@ -122,6 +122,32 @@ def get_balances():
     with lock:
         return {"mode":"demo_only","balances":{account: assets.copy() for account, assets in balances.items()}}
 
+def _reserved_amount(account: Account, asset: str) -> float:
+    """Return funds reserved by active demo orders for one account and asset."""
+    reserved = 0.0
+    for resting in orders:
+        if resting.account != account or resting.status not in ("open", "partially_filled"):
+            continue
+        base_asset = resting.market.value.split("/")[0]
+        if asset == "SAR" and resting.side == Side.BUY:
+            reserved += resting.price * resting.remaining_quantity
+        elif asset == base_asset and resting.side == Side.SELL:
+            reserved += resting.remaining_quantity
+    return reserved
+
+
+@app.get("/available-balances")
+def get_available_balances():
+    with lock:
+        available = {}
+        for account, assets in balances.items():
+            available[account] = {
+                asset: round(max(0.0, value - _reserved_amount(Account(account), asset)), 8)
+                for asset, value in assets.items()
+            }
+        return {"mode": "demo_only", "available_balances": available}
+
+
 @app.get("/orders", response_model=List[Order])
 def get_orders():
     with lock:
@@ -144,6 +170,16 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
                     if prior_order.id == prior[1]:
                         return prior_order
                 raise HTTPException(status_code=409, detail="Idempotency-Key record is inconsistent")
+        base_asset = order.market.value.split("/")[0]
+        if order.side == Side.BUY:
+            required = order.price * order.quantity
+            available = balances[order.account]["SAR"] - _reserved_amount(order.account, "SAR")
+            if available + 1e-8 < required:
+                raise HTTPException(status_code=409, detail="Insufficient available demo SAR after open-order reservations")
+        else:
+            available = balances[order.account][base_asset] - _reserved_amount(order.account, base_asset)
+            if available + 1e-12 < order.quantity:
+                raise HTTPException(status_code=409, detail=f"Insufficient available demo {base_asset} after open-order reservations")
         matches=[o for o in orders if o.market==order.market and o.side!=order.side and o.account!=order.account and o.status in ("open","partially_filled") and (o.price<=order.price if order.side==Side.BUY else o.price>=order.price)]
         matches.sort(key=lambda o:(o.price if order.side==Side.BUY else -o.price,o.created_at))
         for resting in matches:
