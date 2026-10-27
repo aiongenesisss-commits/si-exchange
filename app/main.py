@@ -89,7 +89,7 @@ def get_orders():
 @app.post("/orders", response_model=Order, status_code=201)
 def place_order(request: OrderRequest):
     now = datetime.now(timezone.utc)
-    order = Order(id=str(uuid4()),market=request.market,side=request.side,price=request.price,quantity=request.quantity,remaining_quantity=request.quantity,status="open",created_at=now)
+    order = Order(id=str(uuid4()),market=request.market,side=request.side,account=request.account,price=request.price,quantity=request.quantity,remaining_quantity=request.quantity,status="open",created_at=now)
     with lock:
         matches=[o for o in orders if o.market==order.market and o.side!=order.side and o.account!=order.account and o.status in ("open","partially_filled") and (o.price<=order.price if order.side==Side.BUY else o.price>=order.price)]
         matches.sort(key=lambda o:(o.price if order.side==Side.BUY else -o.price,o.created_at))
