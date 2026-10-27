@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from app.market_data import get_live_prices_sar
 from app import postgres_store
 
+app = FastAPI(title="SI Exchange Demo API", description="Simulation only; no real-money services.", version="0.1.0")
+
 
 def _postgres_enabled() -> bool:
     return os.getenv("AION_STORAGE_BACKEND", "memory").strip().lower() == "postgres"
@@ -24,8 +26,6 @@ def configure_storage():
         # Fail closed: never silently switch to volatile memory if PostgreSQL is requested.
         postgres_store.check_connection()
         postgres_store.initialize_demo_accounts()
-
-app = FastAPI(title="SI Exchange Demo API", description="Simulation only; no real-money services.", version="0.1.0")
 
 class Market(str, Enum):
     BTC_SAR = "BTC/SAR"
