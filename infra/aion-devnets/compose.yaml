@@ -4,7 +4,10 @@
 services:
   aion-nova:
     image: ghcr.io/foundry-rs/foundry:latest
-    command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71101", "--block-time", "2"]
+    # The Foundry image uses /bin/sh -c as its entrypoint, so supply one command string.
+    command: "anvil --host 0.0.0.0 --port 8545 --chain-id 71101 --block-time 2"
+    environment:
+      ANVIL_IP_ADDR: "0.0.0.0"
     ports:
       - "127.0.0.1:8545:8545"
     restart: unless-stopped
@@ -17,7 +20,9 @@ services:
 
   aion-orbit:
     image: ghcr.io/foundry-rs/foundry:latest
-    command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71102", "--block-time", "2"]
+    command: "anvil --host 0.0.0.0 --port 8545 --chain-id 71102 --block-time 2"
+    environment:
+      ANVIL_IP_ADDR: "0.0.0.0"
     ports:
       - "127.0.0.1:8546:8545"
     restart: unless-stopped
