@@ -4,6 +4,7 @@ import os
 import json
 import math
 from enum import Enum
+from pathlib import Path
 from threading import Lock
 from typing import List
 from uuid import uuid4
@@ -164,6 +165,41 @@ def readiness():
         "digital_vault_live": False,
     }
 
+@app.get("/networks")
+def get_network_registry():
+    """Read-only registry of AION network readiness; never returns secret values."""
+    registry_path = Path(__file__).resolve().parents[1] / "networks" / "aion_networks.json"
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(status_code=503, detail="AION network registry unavailable or invalid")
+
+    # Return only allow-listed public status fields.
+    networks = []
+    for item in registry.get("networks", []):
+        networks.append({
+            "key": item.get("key"),
+            "name": item.get("name"),
+            "chain_id": item.get("chain_id"),
+            "status": item.get("status"),
+            "purpose": item.get("purpose"),
+            "native_currency": item.get("native_currency"),
+            "public_rpc_url": item.get("public_rpc_url"),
+            "explorer_url": item.get("explorer_url"),
+            "token_deployed": item.get("token_deployed"),
+            "token_contract_address": item.get("token_contract_address"),
+            "public_network_verified": False if item.get("status") == "planned" else None,
+        })
+
+    return {
+        "status": registry.get("status", "configuration_only"),
+        "warning": registry.get("warning", "Do not assume planned networks are public or live."),
+        "networks": networks,
+        "free_deployments": registry.get("free_deployments", {"status": "not_enabled"}),
+        "mode": "read_only_registry",
+        "real_money_enabled": False,
+    }
+
 @app.get("/online-manifest")
 def online_manifest():
     """Public, non-secret inventory of what is and is not actually online."""
@@ -178,6 +214,7 @@ def online_manifest():
         "orders": "/orders",
         "ledger": "/ledger",
         "integrity_audit": "/audit",
+        "network_registry": "/networks",
         "components": {
             "demo_exchange": "available",
             "persistent_storage": "configured_only_when_AION_STORAGE_BACKEND_postgres",
