@@ -1,0 +1,38 @@
+name: AION Local EVM Devnet Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - "infra/devnet/**"
+      - ".github/workflows/aion-devnet-smoke.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "infra/devnet/**"
+      - ".github/workflows/aion-devnet-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Start disposable local EVM nodes
+        run: docker compose -f infra/devnet/docker-compose.yml up -d
+
+      - name: Verify chain IDs and independent state
+        run: python3 infra/devnet/check_rpc.py
+
+      - name: Print service status on failure
+        if: failure()
+        run: docker compose -f infra/devnet/docker-compose.yml ps
+
+      - name: Stop disposable nodes
+        if: always()
+        run: docker compose -f infra/devnet/docker-compose.yml down --volumes
