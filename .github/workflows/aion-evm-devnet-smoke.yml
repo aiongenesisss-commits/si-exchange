@@ -1,0 +1,36 @@
+name: AION Nova and Orbit local EVM smoke tests
+
+on:
+  pull_request:
+    paths:
+      - "scripts/test-aion-evm-devnets.sh"
+      - ".github/workflows/aion-evm-devnet-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/test-aion-evm-devnets.sh"
+      - ".github/workflows/aion-evm-devnet-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aion-evm-devnet-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-local-devnets:
+    name: Verify isolated Nova and Orbit RPC chain IDs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Smoke-test two independent local EVM nodes
+        shell: bash
+        run: bash scripts/test-aion-evm-devnets.sh
