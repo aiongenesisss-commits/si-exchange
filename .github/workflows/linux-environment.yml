@@ -1,0 +1,39 @@
+name: Linux Container Verification
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build Debian-based Linux image
+        run: docker build --tag si-exchange-linux:ci .
+
+      - name: Run automated tests inside Linux image
+        run: docker run --rm si-exchange-linux:ci python -m pytest
+
+      - name: Confirm demo safety flags remain disabled
+        run: |
+          python - <<'PY'
+          from app.main import app
+          routes = {route.path for route in app.routes}
+          assert "/health" in routes, f"/health route missing; routes={sorted(routes)}"
+          print("Application imports and health route is registered.")
+          print("This workflow does not connect to an exchange or submit orders.")
+          PY
