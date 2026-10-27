@@ -105,10 +105,13 @@ def test_postgres_fill_ledger_and_idempotency_are_durable(postgres_demo):
         idempotency_key="postgres-fill-001",
     )
 
-    assert maker["status"] == "filled"
+    # The maker response reflects its state when first submitted (open); inspect
+    # persisted orders after the crossing taker has matched it.
+    persisted_orders = {order["id"]: order for order in postgres_demo.list_orders()}
+    assert persisted_orders[maker["id"]]["status"] == "filled"
     assert taker["status"] == "filled"
     assert replay["id"] == taker["id"]
-    assert len(postgres_demo.list_orders()) == 2
+    assert len(persisted_orders) == 2
     fills = postgres_demo.list_fills()
     assert len(fills) == 1
     assert fills[0]["maker_order_id"] == maker["id"]
