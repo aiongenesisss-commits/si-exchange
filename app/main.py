@@ -1,5 +1,6 @@
 """Arabic RTL simulation-only SI Exchange demo."""
 from datetime import datetime, timezone
+import os
 import json
 import math
 from enum import Enum
@@ -10,6 +11,19 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from app.market_data import get_live_prices_sar
+from app import postgres_store
+
+
+def _postgres_enabled() -> bool:
+    return os.getenv("AION_STORAGE_BACKEND", "memory").strip().lower() == "postgres"
+
+
+@app.on_event("startup")
+def configure_storage():
+    if _postgres_enabled():
+        # Fail closed: never silently switch to volatile memory if PostgreSQL is requested.
+        postgres_store.check_connection()
+        postgres_store.initialize_demo_accounts()
 
 app = FastAPI(title="SI Exchange Demo API", description="Simulation only; no real-money services.", version="0.1.0")
 
@@ -112,7 +126,13 @@ def api_root():
 
 @app.get("/health")
 def health():
-    return {"status":"ok","mode":"simulation_only"}
+    if _postgres_enabled():
+        try:
+            postgres_store.check_connection()
+            return {"status":"ok","mode":"simulation_only","storage":"postgres"}
+        except Exception:
+            raise HTTPException(status_code=503, detail="Configured PostgreSQL storage unavailable")
+    return {"status":"ok","mode":"simulation_only","storage":"memory_demo"}
 
 @app.get("/markets")
 def get_markets():
@@ -142,6 +162,9 @@ def get_markets():
 
 @app.get("/balances")
 def get_balances():
+    if _postgres_enabled():
+        try: return postgres_store.balances()
+        except Exception: raise HTTPException(status_code=503, detail="PostgreSQL storage unavailable")
     with lock:
         return {"mode":"demo_only","balances":{account: assets.copy() for account, assets in balances.items()}}
 
@@ -161,6 +184,9 @@ def _reserved_amount(account: Account, asset: str) -> float:
 
 @app.get("/available-balances")
 def get_available_balances():
+    if _postgres_enabled():
+        try: return postgres_store.available_balances()
+        except Exception: raise HTTPException(status_code=503, detail="PostgreSQL storage unavailable")
     with lock:
         available = {}
         for account, assets in balances.items():
@@ -173,11 +199,26 @@ def get_available_balances():
 
 @app.get("/orders", response_model=List[Order])
 def get_orders():
+    if _postgres_enabled():
+        try: return postgres_store.list_orders()
+        except Exception: raise HTTPException(status_code=503, detail="PostgreSQL storage unavailable")
     with lock:
         return list(orders)
 
 @app.post("/orders", response_model=Order, status_code=201)
 def place_order(request: OrderRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if _postgres_enabled():
+        try:
+            result = postgres_store.place_order(request, idempotency_key)
+            if result.get("error") == "idempotency_conflict":
+                raise HTTPException(status_code=409, detail="Idempotency-Key already used with a different request")
+            if result.get("error") == "insufficient_funds":
+                raise HTTPException(status_code=409, detail=f"Insufficient available demo {result.get('asset')} after open-order reservations")
+            return result
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=503, detail="PostgreSQL order transaction failed")
     now = datetime.now(timezone.utc)
     fingerprint = json.dumps(request.model_dump(mode="json"), sort_keys=True)
     order = Order(id=str(uuid4()),market=request.market,side=request.side,account=request.account,price=request.price,quantity=request.quantity,remaining_quantity=request.quantity,status="open",created_at=now)
@@ -231,6 +272,9 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
 @app.get("/audit")
 def integrity_audit():
     """Check demo order/fill linkage, balance conservation, and nonnegative balances."""
+    if _postgres_enabled():
+        try: return postgres_store.audit()
+        except Exception: raise HTTPException(status_code=503, detail="PostgreSQL audit unavailable")
     issues = []
     with lock:
         known_order_ids = {o.id for o in orders}
@@ -261,11 +305,21 @@ def integrity_audit():
 
 @app.get("/ledger", response_model=List[Fill])
 def get_ledger():
+    if _postgres_enabled():
+        try: return postgres_store.list_fills()
+        except Exception: raise HTTPException(status_code=503, detail="PostgreSQL storage unavailable")
     with lock:
         return list(ledger)
 
 @app.get("/orders/{order_id}", response_model=Order)
 def get_order(order_id: str):
+    if _postgres_enabled():
+        try:
+            order = postgres_store.get_order(order_id)
+            if order: return order
+            raise HTTPException(status_code=404, detail="Order not found")
+        except HTTPException: raise
+        except Exception: raise HTTPException(status_code=503, detail="PostgreSQL storage unavailable")
     with lock:
         for order in orders:
             if order.id==order_id: return order
