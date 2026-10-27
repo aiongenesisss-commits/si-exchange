@@ -94,6 +94,18 @@ class BinanceSpotTestnetAdapter:
             created_at=created_at,
         )
 
+    def check_connection(self) -> dict:
+        """Verify signed account access without submitting, cancelling, or changing orders."""
+        response = self._request("GET", "/api/v3/account", {"omitZeroBalances": "true"})
+        if not isinstance(response, dict) or not isinstance(response.get("balances"), list):
+            raise RuntimeError("Unexpected account response from Binance Spot Testnet")
+        return {
+            "connected": True,
+            "can_read_account": True,
+            "nonzero_asset_count": len(response["balances"]),
+            "mode": self.mode,
+        }
+
     def submit_order(
         self, *, market: str, side: Literal["buy", "sell"], price: str,
         quantity: str, idempotency_key: str
