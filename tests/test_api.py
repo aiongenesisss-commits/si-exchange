@@ -36,3 +36,32 @@ def test_rejects_non_positive_price_and_quantity():
 
 def test_missing_order_returns_404():
     assert client.get("/orders/not-real").status_code == 404
+
+
+def test_buy_matches_resting_sell_below_buy_limit():
+    sell = client.post("/orders", json={"market":"BTC/SAR","side":"sell","price":249000,"quantity":0.01})
+    buy = client.post("/orders", json={"market":"BTC/SAR","side":"buy","price":250000,"quantity":0.01})
+    assert sell.status_code == 201
+    assert buy.status_code == 201
+    assert buy.json()["status"] == "filled"
+    assert sell.json()["id"] == client.get(f"/orders/{sell.json()['id']}").json()["id"]
+    assert client.get(f"/orders/{sell.json()['id']}").json()["status"] == "filled"
+    fills = client.get("/ledger").json()
+    assert len(fills) == 1
+    assert fills[0]["price"] == 249000
+    assert fills[0]["simulated_value_sar"] == 2490
+
+def test_sell_matches_resting_buy_above_sell_limit():
+    buy = client.post("/orders", json={"market":"BTC/SAR","side":"buy","price":250000,"quantity":0.01})
+    sell = client.post("/orders", json={"market":"BTC/SAR","side":"sell","price":249000,"quantity":0.01})
+    assert buy.status_code == 201 and sell.status_code == 201
+    assert sell.json()["status"] == "filled"
+    assert client.get(f"/orders/{buy.json()['id']}").json()["status"] == "filled"
+    assert client.get("/ledger").json()[0]["price"] == 250000
+
+def test_non_crossing_orders_remain_open():
+    sell = client.post("/orders", json={"market":"BTC/SAR","side":"sell","price":251000,"quantity":0.01})
+    buy = client.post("/orders", json={"market":"BTC/SAR","side":"buy","price":250000,"quantity":0.01})
+    assert sell.json()["status"] == "open"
+    assert buy.json()["status"] == "open"
+    assert client.get("/ledger").json() == []
