@@ -1,0 +1,42 @@
+name: AION two-chain local smoke test
+
+on:
+  push:
+    paths:
+      - "infra/aion-networks/**"
+      - ".github/workflows/aion-networks-smoke.yml"
+  pull_request:
+    paths:
+      - "infra/aion-networks/**"
+      - ".github/workflows/aion-networks-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-chain-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start isolated local EVM chains
+        run: docker compose -f infra/aion-networks/docker-compose.yml up -d
+      - name: Wait for both RPC endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            nova=$(curl -sS -H 'content-type: application/json' --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' http://127.0.0.1:18545 || true)
+            orbit=$(curl -sS -H 'content-type: application/json' --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' http://127.0.0.1:18546 || true)
+            if [[ "$nova" == *'"result":"0x1159d"'* && "$orbit" == *'"result":"0x1159e"'* ]]; then
+              echo "AION Nova chain ID 71101 and AION Orbit chain ID 71102 are responding."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f infra/aion-networks/docker-compose.yml logs
+          exit 1
+      - name: Stop chains
+        if: always()
+        run: docker compose -f infra/aion-networks/docker-compose.yml down -v
