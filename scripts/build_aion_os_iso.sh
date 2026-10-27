@@ -28,6 +28,8 @@ docker run --rm \
     --distribution bookworm \
     --architectures amd64 \
     --keyring-packages debian-archive-keyring \
+    --linux-packages linux-image \
+    --linux-flavours amd64 \
     --binary-images iso-hybrid \
     --archive-areas "main" \
     --mirror-bootstrap "http://deb.debian.org/debian/" \
