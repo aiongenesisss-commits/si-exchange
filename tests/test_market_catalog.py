@@ -14,20 +14,20 @@ def reset_demo_state():
         balances[account].update({
             "BTC": 0.25, "ETH": 2.0, "BNB": 10.0, "SOL": 20.0,
             "XRP": 500.0, "ADA": 500.0, "DOGE": 1000.0, "TRX": 5000.0,
-            "LTC": 2.0, "DOT": 20.0, "LINK": 20.0, "USDT": 1000.0, "USDC": 1000.0,
+            "LTC": 2.0, "DOT": 20.0, "LINK": 20.0, "AION": 100000.0, "USDT": 1000.0, "USDC": 1000.0,
         })
 
 
-def test_market_catalog_has_13_simulated_crypto_pairs():
+def test_market_catalog_has_14_simulated_crypto_pairs():
     reset_demo_state()
     response = client.get("/markets")
     assert response.status_code == 200
     markets = response.json()
-    assert len(markets) == 13
+    assert len(markets) == 14
     assert {item["symbol"] for item in markets} == {
         "BTC/SAR", "ETH/SAR", "BNB/SAR", "SOL/SAR", "XRP/SAR",
         "ADA/SAR", "DOGE/SAR", "TRX/SAR", "LTC/SAR", "DOT/SAR",
-        "LINK/SAR", "USDT/SAR", "USDC/SAR",
+        "LINK/SAR", "AION/SAR", "USDT/SAR", "USDC/SAR",
     }
     assert all(item["simulated_price_sar"] > 0 for item in markets)
 

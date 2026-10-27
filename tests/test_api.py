@@ -24,7 +24,7 @@ def test_dashboard_is_arabic_rtl_and_api_is_simulation_only():
 
 def test_markets_and_demo_balances():
     markets = client.get("/markets").json()
-    assert {m["symbol"] for m in markets} == {"BTC/SAR", "ETH/SAR", "BNB/SAR", "SOL/SAR", "XRP/SAR", "ADA/SAR", "DOGE/SAR", "TRX/SAR", "LTC/SAR", "DOT/SAR", "LINK/SAR", "USDT/SAR", "USDC/SAR"}
+    assert {m["symbol"] for m in markets} == {"BTC/SAR", "ETH/SAR", "BNB/SAR", "SOL/SAR", "XRP/SAR", "ADA/SAR", "DOGE/SAR", "TRX/SAR", "LTC/SAR", "DOT/SAR", "LINK/SAR", "AION/SAR", "USDT/SAR", "USDC/SAR"}
     response = client.get("/balances").json()
     assert response["mode"] == "demo_only"
     assert response["balances"]["A"]["SAR"] == 100000
@@ -87,3 +87,24 @@ def test_rejects_non_positive_price_and_quantity():
 
 def test_missing_order_returns_404():
     assert client.get("/orders/not-real").status_code == 404
+
+
+def test_aion_sar_is_simulation_only_and_trades_only_demo_balances():
+    markets = {item["symbol"]: item for item in client.get("/markets").json()}
+    aion_market = markets["AION/SAR"]
+    assert aion_market["is_live"] is False
+    assert aion_market["simulated_price_sar"] == 0.10
+    assert "Fallback simulated price" in aion_market["price_source"]
+    assert client.get("/api").json()["live_trading"] is False
+
+    sell = client.post("/orders", json={"market":"AION/SAR","side":"sell","account":"A","price":0.10,"quantity":10})
+    buy = client.post("/orders", json={"market":"AION/SAR","side":"buy","account":"B","price":0.10,"quantity":10})
+    assert sell.status_code == 201 and buy.status_code == 201
+    assert buy.json()["status"] == "filled"
+    fill = client.get("/ledger").json()[0]
+    assert fill["market"] == "AION/SAR"
+    assert fill["simulated_value_sar"] == 1.0
+    after = client.get("/balances").json()["balances"]
+    assert after["A"]["AION"] == 99990
+    assert after["B"]["AION"] == 100010
+    assert client.get("/audit").json()["valid"] is True

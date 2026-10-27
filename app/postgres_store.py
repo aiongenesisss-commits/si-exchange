@@ -20,7 +20,7 @@ ASSETS = {
     "BTC": Decimal("0.25"), "ETH": Decimal("2"), "BNB": Decimal("10"),
     "SOL": Decimal("20"), "XRP": Decimal("500"), "ADA": Decimal("500"),
     "DOGE": Decimal("1000"), "TRX": Decimal("5000"), "LTC": Decimal("2"),
-    "DOT": Decimal("20"), "LINK": Decimal("20"), "USDT": Decimal("1000"),
+    "DOT": Decimal("20"), "LINK": Decimal("20"), "AION": Decimal("100000"), "USDT": Decimal("1000"),
     "USDC": Decimal("1000"),
 }
 INITIAL_TOTALS = {"SAR": Decimal("200000"), **{k: v * 2 for k, v in ASSETS.items()}}
