@@ -28,12 +28,6 @@ jobs:
       - name: Run automated tests inside Linux image
         run: docker run --rm si-exchange-linux:ci python -m pytest
 
-      - name: Confirm demo safety flags remain disabled
+      - name: Confirm health route is registered inside the image
         run: |
-          python - <<'PY'
-          from app.main import app
-          routes = {route.path for route in app.routes}
-          assert "/health" in routes, f"/health route missing; routes={sorted(routes)}"
-          print("Application imports and health route is registered.")
-          print("This workflow does not connect to an exchange or submit orders.")
-          PY
+          docker run --rm si-exchange-linux:ci python -c 'from app.main import app; routes = {route.path for route in app.routes}; assert "/health" in routes, f"/health route missing: {sorted(routes)}"; print("Application imports and health route is registered.")'
