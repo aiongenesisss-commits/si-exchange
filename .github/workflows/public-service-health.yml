@@ -1,0 +1,43 @@
+name: Public Service Health Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-service-health-monitor
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check SI Exchange public endpoints
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          check() {
+            local label="$1" url="$2" expected="$3"
+            local code
+            code="$(curl --silent --show-error --location --max-time 20 --output /tmp/health-body --write-out '%{http_code}' "$url" || true)"
+            if [[ "$code" == "$expected" ]]; then
+              echo "PASS | $label | HTTP $code"
+              echo "- ✅ **$label** — HTTP $code" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "FAIL | $label | expected HTTP $expected, got ${code:-no response}"
+              echo "- ❌ **$label** — expected HTTP $expected, got ${code:-no response}" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+          }
+          check "SI Exchange health" "https://si-exchange-1vq1.vercel.app/health" "200"
+          check "SI Exchange API safety flags" "https://si-exchange-1vq1.vercel.app/api" "200"
+          check "SI Exchange audit endpoint" "https://si-exchange-1vq1.vercel.app/audit" "200"
+          check "AION public website" "https://aion-production-fbf3.up.railway.app/" "200"
+          check "AION Earth data API" "https://aion-production-fbf3.up.railway.app/api/earth-data?path=overview" "200"
+          exit "$failed"
