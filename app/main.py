@@ -137,6 +137,60 @@ def health():
             raise HTTPException(status_code=503, detail="Configured PostgreSQL storage unavailable")
     return {"status":"ok","mode":"simulation_only","storage":"memory_demo"}
 
+@app.get("/ready")
+def readiness():
+    """Deployment readiness probe; never reports planned chains or vaults as live."""
+    if _postgres_enabled():
+        try:
+            postgres_store.check_connection()
+            return {
+                "status": "ready",
+                "mode": "simulation_only",
+                "storage": "postgres",
+                "durable_demo_storage": True,
+                "real_money_enabled": False,
+                "blockchain_connected": False,
+                "digital_vault_live": False,
+            }
+        except Exception:
+            raise HTTPException(status_code=503, detail="Configured PostgreSQL storage unavailable")
+    return {
+        "status": "ready",
+        "mode": "simulation_only",
+        "storage": "memory_demo",
+        "durable_demo_storage": False,
+        "real_money_enabled": False,
+        "blockchain_connected": False,
+        "digital_vault_live": False,
+    }
+
+@app.get("/online-manifest")
+def online_manifest():
+    """Public, non-secret inventory of what is and is not actually online."""
+    return {
+        "platform": "SI Exchange",
+        "deployment_mode": "simulation_only",
+        "dashboard": "online_when_this_service_is_reachable",
+        "api_health": "/health",
+        "readiness": "/ready",
+        "markets": "/markets",
+        "balances": "/balances",
+        "orders": "/orders",
+        "ledger": "/ledger",
+        "integrity_audit": "/audit",
+        "components": {
+            "demo_exchange": "available",
+            "persistent_storage": "configured_only_when_AION_STORAGE_BACKEND_postgres",
+            "aion_nova_chain_id_71101": "planned_not_live",
+            "aion_orbit_chain_id_71102": "planned_not_live",
+            "aion_coin_on_chain": "not_verified_deployed",
+            "digital_vault": "not_implemented_for_real_assets",
+            "real_deposits_withdrawals_custody": "disabled",
+            "live_trading": "disabled",
+        },
+        "security_note": "Never send private keys, seed phrases, API secrets, or signing credentials to this public API.",
+    }
+
 @app.get("/markets")
 def get_markets():
     live = get_live_prices_sar()
