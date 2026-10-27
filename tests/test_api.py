@@ -109,3 +109,32 @@ def test_aion_sar_is_simulation_only_and_trades_only_demo_balances():
     assert after["A"]["AION"] == 99990
     assert after["B"]["AION"] == 100010
     assert client.get("/audit").json()["valid"] is True
+
+
+def test_network_registry_endpoint_reports_planned_networks_without_claiming_public_services():
+    response = client.get("/networks")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "configuration_only"
+    assert body["mode"] == "read_only_registry"
+    assert body["real_money_enabled"] is False
+    assert [item["name"] for item in body["networks"]] == ["AION Nova", "AION Orbit"]
+    assert [item["chain_id"] for item in body["networks"]] == [71101, 71102]
+    for item in body["networks"]:
+        assert item["status"] == "planned"
+        assert item["public_rpc_url"] is None
+        assert item["explorer_url"] is None
+        assert item["token_deployed"] is False
+        assert item["token_contract_address"] is None
+        assert item["public_network_verified"] is False
+        assert "local_rpc_url" not in item
+    assert body["free_deployments"]["status"] == "not_enabled"
+
+
+def test_online_manifest_links_to_read_only_network_registry():
+    manifest = client.get("/online-manifest")
+    assert manifest.status_code == 200
+    body = manifest.json()
+    assert body["network_registry"] == "/networks"
+    assert body["components"]["aion_nova_chain_id_71101"] == "planned_not_live"
+    assert body["components"]["aion_orbit_chain_id_71102"] == "planned_not_live"
