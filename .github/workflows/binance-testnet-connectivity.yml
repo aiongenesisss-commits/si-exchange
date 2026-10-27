@@ -2,6 +2,12 @@ name: Binance Spot Testnet Connectivity
 
 on:
   workflow_dispatch:
+    inputs:
+      run_order_lifecycle:
+        description: "Opt in to submit, query, and cancel one small BTC/USDT limit order using testnet funds"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +22,7 @@ jobs:
       REAL_TRADING_ENABLED: "false"
       BINANCE_TESTNET_API_KEY: ${{ secrets.BINANCE_TESTNET_API_KEY }}
       BINANCE_TESTNET_API_SECRET: ${{ secrets.BINANCE_TESTNET_API_SECRET }}
+      ALLOW_TESTNET_ORDER: ${{ inputs.run_order_lifecycle }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,9 +30,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run local tests
+      - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
+      - name: Run local tests
+        run: |
           python -m pytest -q tests/test_testnet_connection.py tests/test_binance_testnet.py
       - name: Verify signed read-only testnet account access
         run: python scripts/check_binance_testnet.py
+      - name: Optional testnet order lifecycle
+        if: inputs.run_order_lifecycle
+        run: python scripts/testnet_order_lifecycle.py
