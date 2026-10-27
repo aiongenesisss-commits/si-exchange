@@ -1,0 +1,22 @@
+[Unit]
+Description=AION SI Exchange simulation demo
+After=network.target
+
+[Service]
+Type=simple
+User=aion
+Group=aion
+WorkingDirectory=/opt/aion/si-exchange
+Environment=AION_STORAGE_BACKEND=memory
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/aion/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/aion
+
+[Install]
+WantedBy=multi-user.target
