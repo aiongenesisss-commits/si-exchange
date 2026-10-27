@@ -3,7 +3,7 @@ name: AION Offline OS ISO
 on:
   workflow_dispatch:
   push:
-    branches: ["feat/aion-portable-platform-roadmap"]
+    branches: ["main", "feat/aion-portable-platform-roadmap"]
     paths:
       - "os/**"
       - "scripts/build_aion_os_iso.sh"
