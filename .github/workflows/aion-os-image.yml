@@ -1,0 +1,56 @@
+name: AION Offline OS ISO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feat/aion-portable-platform-roadmap"]
+    paths:
+      - "os/**"
+      - "scripts/build_aion_os_iso.sh"
+      - "scripts/test_aion_os_iso.sh"
+      - "requirements-os.txt"
+      - "app/**"
+      - "migrations/**"
+      - ".github/workflows/aion-os-image.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aion-offline-os-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-bootable-iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install live-image and virtual-machine tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin qemu-system-x86 curl
+
+      - name: Build AION offline-first ISO
+        run: bash scripts/build_aion_os_iso.sh
+
+      - name: Verify artifact checksum
+        run: |
+          cd dist
+          sha256sum -c aion-offline-os-amd64.iso.sha256
+          file aion-offline-os-amd64.iso
+
+      - name: Boot ISO in QEMU and test the guest health endpoint
+        run: bash scripts/test_aion_os_iso.sh dist/aion-offline-os-amd64.iso
+
+      - name: Upload bootable ISO and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: aion-offline-os-amd64
+          path: |
+            dist/aion-offline-os-amd64.iso
+            dist/aion-offline-os-amd64.iso.sha256
+          if-no-files-found: error
+          retention-days: 14
