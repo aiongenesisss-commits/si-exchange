@@ -7,9 +7,13 @@
 - `EXECUTION_MODE=binance_testnet`: explicit Binance Spot Testnet adapter, only when server-side `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET` are configured. This adapter hard-codes `https://testnet.binance.vision`; there is no configurable base URL and it cannot route to Binance production.
 - `REAL_TRADING_ENABLED=true`: rejected. Production execution is not implemented.
 
-## Read-only connectivity verification
+## Read-only connectivity and optional lifecycle check
 
-The manually triggered GitHub Actions workflow `.github/workflows/binance-testnet-connectivity.yml` verifies credentials using the signed `GET /api/v3/account` endpoint. It does not submit, cancel, or change orders. It requires repository Actions secrets named `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET`. Without those secrets, the check fails closed. CI's mocked tests do not prove that external credentials or network connectivity work.
+The manually triggered GitHub Actions workflow `.github/workflows/binance-testnet-connectivity.yml` verifies credentials using the signed `GET /api/v3/account` endpoint. By default it does not submit, cancel, or change orders.
+
+The workflow has a separate, explicit boolean input `run_order_lifecycle`, defaulting to `false`. Only if an operator deliberately checks that input does it run `scripts/testnet_order_lifecycle.py`, which submits one `BTC/USDT` limit buy at 1000 USDT for 0.01 BTC using testnet funds, queries it, and cancels it if it remains open. This is not production trading and uses only the hard-coded Spot Testnet endpoint. The selected price is intentionally far below typical market price but is not a guarantee against execution; testnet balances are virtual. If a request times out after submission, inspect the testnet account before retrying.
+
+The workflow requires repository Actions secrets named `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET`. Without those secrets, the connection check fails closed. CI's mocked tests do not prove that external credentials or network connectivity work.
 
 ## Binance testnet boundary
 
@@ -20,10 +24,10 @@ The testnet order registry is process-local, not durable. A restart can prevent 
 ## Credentials and setup
 
 1. Create a Spot Testnet account and API key through the official testnet portal.
-2. Store its key and secret only as GitHub Actions secrets for this connectivity check:
+2. Store its key and secret only as GitHub Actions secrets:
    - `BINANCE_TESTNET_API_KEY`
    - `BINANCE_TESTNET_API_SECRET`
-3. Run **Actions → Binance Spot Testnet Connectivity → Run workflow**. The check is read-only and does not place orders.
+3. Run **Actions → Binance Spot Testnet Connectivity → Run workflow**. Leave `run_order_lifecycle` unchecked for read-only verification. Enable it only when intentionally testing an order lifecycle.
 4. Do not use production exchange credentials. Do not commit secrets, put them in client-side code, or send them in chat.
 
 Official docs:
