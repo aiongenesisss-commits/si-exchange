@@ -1,0 +1,53 @@
+name: AION Nova and Orbit Devnet Smoke Test
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+    paths:
+      - "config/aion-networks.json"
+      - "infra/aion-devnets/**"
+      - "scripts/check_aion_devnets.py"
+      - "tests/test_aion_network_config.py"
+      - ".github/workflows/aion-devnets.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "config/aion-networks.json"
+      - "infra/aion-devnets/**"
+      - "scripts/check_aion_devnets.py"
+      - "tests/test_aion_network_config.py"
+      - ".github/workflows/aion-devnets.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  config-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements-dev.txt
+      - run: pytest -q tests/test_aion_network_config.py
+
+  rpc-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Start both isolated local chains
+        run: docker compose -f infra/aion-devnets/compose.yaml up -d --wait
+      - name: Verify chain IDs and JSON-RPC health
+        run: python scripts/check_aion_devnets.py
+      - name: Capture logs if the job fails
+        if: failure()
+        run: docker compose -f infra/aion-devnets/compose.yaml logs --no-color
+      - name: Stop ephemeral local chains
+        if: always()
+        run: docker compose -f infra/aion-devnets/compose.yaml down --volumes --remove-orphans
