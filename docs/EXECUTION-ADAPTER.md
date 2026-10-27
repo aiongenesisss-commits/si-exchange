@@ -7,6 +7,10 @@
 - `EXECUTION_MODE=binance_testnet`: explicit Binance Spot Testnet adapter, only when server-side `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET` are configured. This adapter hard-codes `https://testnet.binance.vision`; there is no configurable base URL and it cannot route to Binance production.
 - `REAL_TRADING_ENABLED=true`: rejected. Production execution is not implemented.
 
+## Read-only connectivity verification
+
+The manually triggered GitHub Actions workflow `.github/workflows/binance-testnet-connectivity.yml` verifies credentials using the signed `GET /api/v3/account` endpoint. It does not submit, cancel, or change orders. It requires repository Actions secrets named `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET`. Without those secrets, the check fails closed. CI's mocked tests do not prove that external credentials or network connectivity work.
+
 ## Binance testnet boundary
 
 The adapter supports limit orders on explicit USDT spot pairs such as `BTC/USDT`. It intentionally rejects the app's SAR-denominated markets because those are not Binance spot symbols. It signs private requests, uses the exchange's client order ID field, and supports submit/query/cancel. HTTP calls are covered by mocked tests; no real external testnet order has been submitted as part of CI.
@@ -16,10 +20,10 @@ The testnet order registry is process-local, not durable. A restart can prevent 
 ## Credentials and setup
 
 1. Create a Spot Testnet account and API key through the official testnet portal.
-2. Store its key and secret only as server-side environment secrets:
+2. Store its key and secret only as GitHub Actions secrets for this connectivity check:
    - `BINANCE_TESTNET_API_KEY`
    - `BINANCE_TESTNET_API_SECRET`
-3. Set `EXECUTION_MODE=binance_testnet` only in a dedicated non-production test environment.
+3. Run **Actions → Binance Spot Testnet Connectivity → Run workflow**. The check is read-only and does not place orders.
 4. Do not use production exchange credentials. Do not commit secrets, put them in client-side code, or send them in chat.
 
 Official docs:
