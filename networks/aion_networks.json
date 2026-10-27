@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "status": "configuration_only",
-  "warning": "These networks are not live. RPC URLs and token addresses must be supplied and independently verified before the status can change.",
+  "warning": "These networks are not public or live. The local Anvil nodes are temporary CI/development fixtures. Public RPC URLs, explorers, and AION token addresses must remain unset until independently verified.",
   "networks": [
     {
       "key": "nova",
@@ -11,6 +11,11 @@
       "rpc_url_env": "AION_NOVA_RPC_URL",
       "explorer_url_env": "AION_NOVA_EXPLORER_URL",
       "token_address_env": "AION_NOVA_TOKEN_ADDRESS",
+      "local_rpc_url": "http://127.0.0.1:8545",
+      "public_rpc_url": null,
+      "explorer_url": null,
+      "token_deployed": false,
+      "token_contract_address": null,
       "status": "planned",
       "purpose": "Application development and contract testing"
     },
@@ -22,6 +27,11 @@
       "rpc_url_env": "AION_ORBIT_RPC_URL",
       "explorer_url_env": "AION_ORBIT_EXPLORER_URL",
       "token_address_env": "AION_ORBIT_TOKEN_ADDRESS",
+      "local_rpc_url": "http://127.0.0.1:8546",
+      "public_rpc_url": null,
+      "explorer_url": null,
+      "token_deployed": false,
+      "token_contract_address": null,
       "status": "planned",
       "purpose": "Staging and production-readiness evaluation"
     }
