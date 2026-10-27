@@ -1,0 +1,49 @@
+name: Linux Container Verification
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build Debian-based Linux image
+        run: docker build --tag si-exchange-linux:ci .
+
+      - name: Run automated tests inside Linux image
+        run: docker run --rm si-exchange-linux:ci python -m pytest
+
+      - name: Confirm health route is registered inside the image
+        run: |
+          docker run --rm si-exchange-linux:ci python -c 'from app.main import app; routes = {route.path for route in app.routes}; assert "/health" in routes, f"/health route missing: {sorted(routes)}"; print("Application imports and health route is registered.")'
+
+      - name: Export and verify offline bundle
+        env:
+          SI_EXCHANGE_IMAGE: si-exchange-linux:ci
+          SI_EXCHANGE_BUNDLE_IMAGE: si-exchange-linux:local
+          SI_EXCHANGE_OUT_DIR: dist/si-exchange-linux-bundle
+        run: |
+          bash scripts/export_linux_bundle.sh
+          tar -tzf dist/si-exchange-linux-bundle.tar.gz
+          (cd dist/si-exchange-linux-bundle && sha256sum -c SHA256SUMS)
+          docker image rm si-exchange-linux:local >/dev/null 2>&1 || true
+          docker load --input dist/si-exchange-linux-bundle/si-exchange-image.tar
+          docker run --rm si-exchange-linux:local python -c "from app.main import app; assert any(route.path == '/health' for route in app.routes); print('Imported bundle image starts and exposes health route.')"
+
+      - name: Verify PostgreSQL migration against an isolated temporary database
+        run: bash scripts/verify_postgres_migration.sh
