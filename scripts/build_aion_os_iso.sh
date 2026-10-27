@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-for tool in lb debootstrap mksquashfs xorriso grub-mkstandalone qemu-system-x86_64; do
+for tool in lb debootstrap mksquashfs xorriso grub-mkstandalone qemu-system-x86_64 docker; do
   command -v "$tool" >/dev/null 2>&1 || { echo "Missing build tool: $tool" >&2; exit 2; }
 done
 mkdir -p "$OUT"
@@ -14,9 +14,12 @@ mkdir -p "$INCLUDES/si-exchange" "$INCLUDES/wheelhouse"
 cp -a "$ROOT/app" "$INCLUDES/si-exchange/app"
 cp "$ROOT/requirements-os.txt" "$INCLUDES/requirements-os.txt"
 cp "$ROOT/migrations/001_initial_schema.sql" "$INCLUDES/si-exchange/001_initial_schema.sql"
-python3 -m venv "$WORK/pip-env"
-"$WORK/pip-env/bin/python" -m pip install --upgrade pip
-"$WORK/pip-env/bin/python" -m pip download --only-binary=:all: --dest "$INCLUDES/wheelhouse" -r "$ROOT/requirements-os.txt"
+# Build the wheelhouse with the target OS Python version, not the Ubuntu host's Python.
+docker run --rm \
+  -v "$INCLUDES/wheelhouse:/wheelhouse" \
+  -v "$ROOT/requirements-os.txt:/requirements-os.txt:ro" \
+  python:3.11-slim-bookworm \
+  python -m pip download --only-binary=:all: --dest /wheelhouse -r /requirements-os.txt
 (
   cd "$WORK"
   chmod 0755 config/hooks/live/010-install-aion.hook.chroot
