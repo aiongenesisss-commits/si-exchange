@@ -25,6 +25,11 @@ python3 -m venv "$WORK/pip-env"
     --architectures amd64 \
     --binary-images iso-hybrid \
     --archive-areas "main" \
+    --mirror-bootstrap "http://deb.debian.org/debian/" \
+    --mirror-chroot "http://deb.debian.org/debian/" \
+    --mirror-binary "http://deb.debian.org/debian/" \
+    --mirror-chroot-security "http://security.debian.org/debian-security/" \
+    --mirror-binary-security "http://security.debian.org/debian-security/" \
     --apt-recommends false \
     --bootappend-live "boot=live components quiet console=ttyS0,115200n8"
   lb build
