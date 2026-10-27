@@ -1,7 +1,4 @@
-"""Provider-neutral order execution interface with an in-process demo adapter only.
-
-This module does not connect to an exchange, broker, wallet, or external sandbox.
-"""
+"""Provider-neutral order execution interface with simulation and explicit testnet adapter."""
 from __future__ import annotations
 
 import os
@@ -12,7 +9,7 @@ from typing import Literal, Protocol
 from uuid import uuid4
 
 
-OrderStatus = Literal["open", "cancelled"]
+OrderStatus = Literal["open", "cancelled", "filled"]
 
 
 @dataclass(frozen=True)
@@ -27,7 +24,7 @@ class ExecutionOrder:
 
 
 class ExecutionAdapter(Protocol):
-    """Small provider-neutral contract; implementations must document their trust boundary."""
+    """Provider-neutral contract; implementations must document their trust boundary."""
 
     def submit_order(
         self, *, market: str, side: Literal["buy", "sell"], price: str,
@@ -40,7 +37,7 @@ class ExecutionAdapter(Protocol):
 
 
 class InProcessSandboxAdapter:
-    """Deterministic local demo adapter. It never sends orders to a real provider."""
+    """Local simulation adapter; never sends orders to a real provider."""
 
     mode = "simulation_only"
 
@@ -53,15 +50,14 @@ class InProcessSandboxAdapter:
         self, *, market: str, side: Literal["buy", "sell"], price: str,
         quantity: str, idempotency_key: str
     ) -> ExecutionOrder:
+        from decimal import Decimal, InvalidOperation
         if not market.strip():
             raise ValueError("market is required")
         if side not in ("buy", "sell"):
             raise ValueError("side must be buy or sell")
         if not idempotency_key or len(idempotency_key) > 200:
             raise ValueError("a non-empty idempotency key of at most 200 characters is required")
-        # Decimal strings are retained as provided; no binary float conversion occurs here.
         try:
-            from decimal import Decimal, InvalidOperation
             p, q = Decimal(price), Decimal(quantity)
         except (InvalidOperation, TypeError, ValueError) as exc:
             raise ValueError("price and quantity must be decimal strings") from exc
@@ -75,11 +71,8 @@ class InProcessSandboxAdapter:
                     raise ValueError("idempotency key reused with a different order")
                 return self._orders[prior[1]]
             order_id = str(uuid4())
-            order = ExecutionOrder(
-                order_id=order_id, market=market, side=side, price=str(p),
-                quantity=str(q), status="open",
-                created_at=datetime.now(timezone.utc).isoformat(),
-            )
+            order = ExecutionOrder(order_id, market, side, str(p), str(q), "open",
+                                   datetime.now(timezone.utc).isoformat())
             self._orders[order_id] = order
             self._idempotency[idempotency_key] = (fingerprint, order_id)
             return order
@@ -98,23 +91,23 @@ class InProcessSandboxAdapter:
                 raise KeyError("unknown sandbox order")
             if order.status == "cancelled":
                 return order
-            cancelled = ExecutionOrder(
-                order_id=order.order_id, market=order.market, side=order.side,
-                price=order.price, quantity=order.quantity, status="cancelled",
-                created_at=order.created_at,
-            )
+            cancelled = ExecutionOrder(order.order_id, order.market, order.side,
+                                       order.price, order.quantity, "cancelled", order.created_at)
             self._orders[order_id] = cancelled
             return cancelled
 
 
 def build_execution_adapter(mode: str | None = None) -> ExecutionAdapter:
-    """Return only the local demo adapter; reject live/unknown configuration closed."""
+    """Default to local simulation; explicit testnet mode is never production routing."""
     configured = (mode if mode is not None else os.getenv("EXECUTION_MODE", "simulation")).strip().lower()
     live_flag = os.getenv("REAL_TRADING_ENABLED", "false").strip().lower()
     if live_flag not in {"false", "0", "no", "true", "1", "yes"}:
         raise RuntimeError("REAL_TRADING_ENABLED must be an explicit boolean")
     if live_flag in {"true", "1", "yes"}:
         raise RuntimeError("Live trading is not implemented and cannot be enabled")
-    if configured not in {"simulation", "sandbox"}:
-        raise RuntimeError(f"Unsupported EXECUTION_MODE: {configured!r}; live execution is unavailable")
-    return InProcessSandboxAdapter()
+    if configured in {"simulation", "sandbox"}:
+        return InProcessSandboxAdapter()
+    if configured == "binance_testnet":
+        from app.binance_testnet import BinanceSpotTestnetAdapter
+        return BinanceSpotTestnetAdapter()
+    raise RuntimeError(f"Unsupported EXECUTION_MODE: {configured!r}; live execution is unavailable")
