@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-IMAGE="${SI_EXCHANGE_IMAGE:-si-exchange-linux:local}"
+SOURCE_IMAGE="${SI_EXCHANGE_IMAGE:-si-exchange-linux:local}"
+BUNDLE_IMAGE="${SI_EXCHANGE_BUNDLE_IMAGE:-si-exchange-linux:local}"
 OUT_DIR="${SI_EXCHANGE_OUT_DIR:-dist/si-exchange-linux-bundle}"
 
 command -v docker >/dev/null 2>&1 || { echo "ERROR: Docker CLI is required." >&2; exit 2; }
 command -v sha256sum >/dev/null 2>&1 || { echo "ERROR: sha256sum is required." >&2; exit 2; }
-docker image inspect "$IMAGE" >/dev/null 2>&1 || {
-  echo "ERROR: image '$IMAGE' is not present locally. Build and test it first." >&2
+docker image inspect "$SOURCE_IMAGE" >/dev/null 2>&1 || {
+  echo "ERROR: image '$SOURCE_IMAGE' is not present locally. Build and test it first." >&2
   exit 2
 }
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR/source"
 
-docker save --output "$OUT_DIR/si-exchange-image.tar" "$IMAGE"
+docker image tag "$SOURCE_IMAGE" "$BUNDLE_IMAGE"
+docker save --output "$OUT_DIR/si-exchange-image.tar" "$BUNDLE_IMAGE"
 for path in Dockerfile compose.yaml requirements.txt requirements-dev.txt pyproject.toml README.md app api tests scripts; do
   if [[ -e "$path" ]]; then
     cp -a "$path" "$OUT_DIR/source/"
