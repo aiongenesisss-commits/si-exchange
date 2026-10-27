@@ -4,6 +4,7 @@ import os
 import json
 import math
 from enum import Enum
+from pathlib import Path
 from threading import Lock
 from typing import List
 from uuid import uuid4
@@ -113,11 +114,11 @@ INITIAL_TOTALS = {"SAR": 200000.0, **{asset: quantity * 2 for asset, quantity in
 PAGE = """<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SI Exchange</title>
 <style>body{margin:0;background:#0b1220;color:#edf4ff;font:16px Tahoma,Arial}header,main{max-width:1000px;margin:auto;padding:20px}header{border-bottom:1px solid #263750}h1{margin:0}p{line-height:1.7;color:#a9bad0}.warning{padding:12px;background:#382d12;border-right:4px solid #fbbf24;border-radius:8px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{background:#121d30;border:1px solid #263750;border-radius:12px;padding:16px;margin:12px 0}.price{font-size:24px;color:#5eead4}label{display:block;margin:10px 0 5px;color:#a9bad0}input,select,button{width:100%;padding:10px;border-radius:8px;border:1px solid #354760;background:#0b1525;color:white;box-sizing:border-box}button{margin-top:12px;background:#5eead4;color:#062b2b;font-weight:bold}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:right;padding:9px;border-bottom:1px solid #263750}.scroll{overflow:auto}.balance{display:inline-block;background:#0b1525;padding:10px;border-radius:8px;margin:4px}</style>
 <header><h1>SI Exchange</h1><p>لوحة تداول تجريبية بواجهة عربية RTL</p><strong style="color:#5eead4">محاكاة فقط — لا أموال حقيقية</strong></header><main><p class="warning">تنبيه: قد تُعرض أسعار مرجعية مباشرة من Binance مع تحويل SAR تقريبي؛ وقد تظهر أسعار احتياطية تجريبية عند تعذر المصدر. جميع الأرصدة والأوامر والتنفيذ تجريبية ومؤقتة. لا توجد إيداعات أو سحوبات أو حفظ أصول أو تداول حي.</p>
-<section class="card"><h3>الأسواق التجريبية مقابل الريال السعودي</h3><div id="marketCards" class="grid">تحميل الأسواق…</div></section><section class="card"><h3>الأرصدة التجريبية</h3><div id="balances">تحميل…</div></section>
+<section class="card"><h3>حالة شبكات AION</h3><p id="networkStatus">جاري قراءة سجل الشبكات...</p></section><section class="card"><h3>الأسواق التجريبية مقابل الريال السعودي</h3><div id="marketCards" class="grid">تحميل الأسواق…</div></section><section class="card"><h3>الأرصدة التجريبية</h3><div id="balances">تحميل…</div></section>
 <div class="grid"><section class="card"><h3>إنشاء أمر محدد السعر</h3><form id="f"><label>السوق</label><select id="market"></select><label>المتداول التجريبي</label><select id="account"><option value="A">المتداول A</option><option value="B">المتداول B</option></select><label>النوع</label><select id="side"><option value="buy">شراء</option><option value="sell">بيع</option></select><label>السعر بالريال</label><input id="price" type="number" min="0.000001" step="any" value="250000" required><label>الكمية</label><input id="qty" type="number" min="0.000001" step="any" value="0.001" required><p>السعر المقترح يتغير حسب السوق. الأمر المحدد لا يُنفّذ إلا عند وجود أمر معاكس بسعر متوافق.</p><button>إرسال أمر تجريبي</button><p id="msg" role="status"></p></form></section><section class="card"><h3>ضوابط السلامة</h3><p>مطابقة أوامر محددة السعر وتسجيل التنفيذ في دفتر تجريبي. لا اتصال بمحافظ أو شبكات بلوك تشين أو مزودي دفع. ليست منصة مالية إنتاجية.</p></section></div>
 <section class="card"><h3>الأوامر</h3><div class="scroll"><table><thead><tr><th>السوق</th><th>النوع</th><th>السعر</th><th>الكمية</th><th>المتبقي</th><th>الحالة</th></tr></thead><tbody id="orders"></tbody></table></div></section>
 <section class="card"><h3>دفتر التنفيذ التجريبي</h3><div class="scroll"><table><thead><tr><th>السوق</th><th>النوع</th><th>السعر</th><th>الكمية</th><th>القيمة SAR</th></tr></thead><tbody id="ledger"></tbody></table></div></section></main>
-<script>const $=id=>document.getElementById(id),fmt=n=>Number(n).toLocaleString('ar-SA',{maximumFractionDigits:8});async function get(p){let r=await fetch(p);if(!r.ok)throw Error('تعذر الاتصال');return r.json()}let marketData=[];function updatePriceDefaults(){const m=marketData.find(x=>x.symbol===$('market').value);if(m){$('price').value=m.simulated_price_sar;$('qty').value=m.symbol.startsWith('BTC/')?'0.001':m.symbol.startsWith('ETH/')?'0.01':m.symbol.startsWith('USDT/')||m.symbol.startsWith('USDC/')?'10':'1'}}async function refresh(){try{let m=await get('/markets'),b=await get('/balances'),o=await get('/orders'),l=await get('/ledger');marketData=m;$('marketCards').innerHTML=m.map(x=>'<section class="card"><h3>'+x.symbol+'</h3><div class="price">'+fmt(x.simulated_price_sar)+' ر.س</div><small>'+(x.is_live?('سعر سوق مباشر — '+x.price_source):x.price_source)+'</small></section>').join('');const selected=$('market').value;$('market').innerHTML=m.map(x=>'<option value="'+x.symbol+'">'+x.symbol+'</option>').join('');if(m.some(x=>x.symbol===selected))$('market').value=selected;updatePriceDefaults();$('balances').innerHTML=Object.entries(b.balances).map(([a,items])=>'<div><b>المتداول '+a+'</b>'+Object.entries(items).map(([k,v])=>'<span class="balance">'+k+': <b>'+fmt(v)+'</b></span>').join('')+'</div>').join('');$('orders').innerHTML=o.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.remaining_quantity)+'</td><td>'+x.status+'</td></tr>').join('')||'<tr><td colspan="6">لا توجد أوامر</td></tr>';$('ledger').innerHTML=l.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.simulated_value_sar)+'</td></tr>').join('')||'<tr><td colspan="5">لا توجد عمليات تنفيذ</td></tr>'}catch(e){$('msg').textContent=e.message}}$('market').addEventListener('change',updatePriceDefaults);$('f').addEventListener('submit',async e=>{e.preventDefault();try{let r=await fetch('/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market:$('market').value,side:$('side').value,account:$('account').value,price:Number($('price').value),quantity:Number($('qty').value)})}),d=await r.json();if(!r.ok)throw Error(JSON.stringify(d.detail));$('msg').textContent='تم إنشاء الأمر التجريبي: '+d.status;await refresh()}catch(e){$('msg').textContent='خطأ: '+e.message}});refresh();</script></html>"""
+<script>const $=id=>document.getElementById(id),fmt=n=>Number(n).toLocaleString('ar-SA',{maximumFractionDigits:8});async function get(p){let r=await fetch(p);if(!r.ok)throw Error('تعذر الاتصال');return r.json()}let marketData=[];async function refreshNetworks(){try{let n=await get('/networks');$('networkStatus').textContent=n.networks.map(x=>x.name+' (Chain ID '+x.chain_id+'): '+(x.status==='planned'?'مخططة، غير منشورة':x.status)).join(' | ')+' — العقود المجانية: '+(n.free_deployments.status==='not_enabled'?'غير مفعّلة حالياً':'الحالة بحاجة إلى مراجعة')}catch(e){$('networkStatus').textContent='تعذر تحميل حالة الشبكات؛ لا تفترض أنها منشورة'}}function updatePriceDefaults(){const m=marketData.find(x=>x.symbol===$('market').value);if(m){$('price').value=m.simulated_price_sar;$('qty').value=m.symbol.startsWith('BTC/')?'0.001':m.symbol.startsWith('ETH/')?'0.01':m.symbol.startsWith('USDT/')||m.symbol.startsWith('USDC/')?'10':'1'}}async function refresh(){try{let m=await get('/markets'),b=await get('/balances'),o=await get('/orders'),l=await get('/ledger');marketData=m;$('marketCards').innerHTML=m.map(x=>'<section class="card"><h3>'+x.symbol+'</h3><div class="price">'+fmt(x.simulated_price_sar)+' ر.س</div><small>'+(x.is_live?('سعر سوق مباشر — '+x.price_source):x.price_source)+'</small></section>').join('');const selected=$('market').value;$('market').innerHTML=m.map(x=>'<option value="'+x.symbol+'">'+x.symbol+'</option>').join('');if(m.some(x=>x.symbol===selected))$('market').value=selected;updatePriceDefaults();$('balances').innerHTML=Object.entries(b.balances).map(([a,items])=>'<div><b>المتداول '+a+'</b>'+Object.entries(items).map(([k,v])=>'<span class="balance">'+k+': <b>'+fmt(v)+'</b></span>').join('')+'</div>').join('');$('orders').innerHTML=o.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.remaining_quantity)+'</td><td>'+x.status+'</td></tr>').join('')||'<tr><td colspan="6">لا توجد أوامر</td></tr>';$('ledger').innerHTML=l.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.simulated_value_sar)+'</td></tr>').join('')||'<tr><td colspan="5">لا توجد عمليات تنفيذ</td></tr>'}catch(e){$('msg').textContent=e.message}}$('market').addEventListener('change',updatePriceDefaults);$('f').addEventListener('submit',async e=>{e.preventDefault();try{let r=await fetch('/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market:$('market').value,side:$('side').value,account:$('account').value,price:Number($('price').value),quantity:Number($('qty').value)})}),d=await r.json();if(!r.ok)throw Error(JSON.stringify(d.detail));$('msg').textContent='تم إنشاء الأمر التجريبي: '+d.status;await refresh()}catch(e){$('msg').textContent='خطأ: '+e.message}});refresh();refreshNetworks();</script></html>"""
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
@@ -164,6 +165,41 @@ def readiness():
         "digital_vault_live": False,
     }
 
+@app.get("/networks")
+def get_network_registry():
+    """Read-only registry of AION network readiness; never returns secret values."""
+    registry_path = Path(__file__).resolve().parents[1] / "networks" / "aion_networks.json"
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(status_code=503, detail="AION network registry unavailable or invalid")
+
+    # Return only allow-listed public status fields.
+    networks = []
+    for item in registry.get("networks", []):
+        networks.append({
+            "key": item.get("key"),
+            "name": item.get("name"),
+            "chain_id": item.get("chain_id"),
+            "status": item.get("status"),
+            "purpose": item.get("purpose"),
+            "native_currency": item.get("native_currency"),
+            "public_rpc_url": item.get("public_rpc_url"),
+            "explorer_url": item.get("explorer_url"),
+            "token_deployed": item.get("token_deployed"),
+            "token_contract_address": item.get("token_contract_address"),
+            "public_network_verified": False if item.get("status") == "planned" else None,
+        })
+
+    return {
+        "status": registry.get("status", "configuration_only"),
+        "warning": registry.get("warning", "Do not assume planned networks are public or live."),
+        "networks": networks,
+        "free_deployments": registry.get("free_deployments", {"status": "not_enabled"}),
+        "mode": "read_only_registry",
+        "real_money_enabled": False,
+    }
+
 @app.get("/online-manifest")
 def online_manifest():
     """Public, non-secret inventory of what is and is not actually online."""
@@ -178,6 +214,7 @@ def online_manifest():
         "orders": "/orders",
         "ledger": "/ledger",
         "integrity_audit": "/audit",
+        "network_registry": "/networks",
         "components": {
             "demo_exchange": "available",
             "persistent_storage": "configured_only_when_AION_STORAGE_BACKEND_postgres",

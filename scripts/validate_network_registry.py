@@ -19,7 +19,11 @@ def validate(data: dict) -> list[str]:
     names: set[str] = set()
     chain_ids: set[int] = set()
     for network in networks:
-        for field in ("key", "name", "chain_id", "rpc_url_env", "explorer_url_env", "token_address_env", "status"):
+        for field in (
+            "key", "name", "chain_id", "rpc_url_env", "explorer_url_env",
+            "token_address_env", "local_rpc_url", "public_rpc_url",
+            "explorer_url", "token_deployed", "token_contract_address", "status",
+        ):
             if field not in network:
                 errors.append(f"network missing required field: {field}")
         if not all(field in network for field in ("key", "name", "chain_id")):
@@ -33,7 +37,7 @@ def validate(data: dict) -> list[str]:
         keys.add(network["key"])
         names.add(network["name"])
         chain_ids.add(network["chain_id"])
-        if not isinstance(network["chain_id"], int) or network["chain_id"] <= 0:
+        if not isinstance(network["chain_id"], int) or isinstance(network["chain_id"], bool) or network["chain_id"] <= 0:
             errors.append(f"invalid chain ID for {network['name']}")
         if network["status"] not in {"planned", "testnet", "live"}:
             errors.append(f"invalid status for {network['name']}")
@@ -42,17 +46,26 @@ def validate(data: dict) -> list[str]:
                 f"{network['name']} cannot be marked live by metadata alone; "
                 "require external RPC, explorer, chain ID, and contract verification checks"
             )
+        if network["status"] == "planned":
+            if not isinstance(network.get("local_rpc_url"), str) or not network["local_rpc_url"].startswith("http://127.0.0.1:"):
+                errors.append(f"{network['name']} local RPC must be loopback-only")
+            if network.get("public_rpc_url") is not None or network.get("explorer_url") is not None:
+                errors.append(f"{network['name']} must not claim public RPC or explorer URLs while planned")
+            if network.get("token_deployed") is not False or network.get("token_contract_address") is not None:
+                errors.append(f"{network['name']} must not claim a deployed token while planned")
 
     free = data.get("free_deployments", {})
     if free.get("limit_per_network") != 50:
         errors.append("free deployment limit must remain 50 per network")
+    if free.get("status") != "not_enabled":
+        errors.append("free deployments must remain disabled until the gas sponsor and abuse controls are implemented")
     if free.get("status") == "enabled" and not all(
         free.get(field) is True
         for field in ("requires_sponsored_gas", "requires_rate_limits", "requires_auditable_counter")
     ):
         errors.append("free deployments cannot be enabled without sponsored gas, rate limits, and an auditable counter")
     if data.get("status") != "configuration_only":
-        errors.append("registry must remain configuration_only until live checks are implemented")
+        errors.append("registry must remain configuration_only until public launch verification is implemented")
     return errors
 
 
