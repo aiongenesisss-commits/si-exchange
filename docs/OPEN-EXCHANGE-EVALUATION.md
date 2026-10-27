@@ -57,6 +57,8 @@ The project documents a matching engine, order-management/risk components, an in
 - No production secrets, customer funds, real order routing, deposits, withdrawals or custody.
 
 ### Phase 2 — local/staging proof of concept
+- Run the read-only prerequisite check first: `python3 scripts/check_open_exchange_prereqs.py`. It reports missing tools, versions, available RAM, `/dev/shm`, and Docker daemon status; it does not install software or start containers.
+- The current upstream quick start requires Linux, at least 8 GB available RAM, writable `/dev/shm`, Java 21, Maven 3.9+, Go 1.25+, Node 22.22+, Python 3, Docker, and `psql`. Confirm the official quick-start page before running because requirements may change.
 - Pin compatible source revisions for all Open Exchange components.
 - Run the official quick start in an isolated Linux development environment with the documented prerequisites.
 - Verify order lifecycle, partial fills, cancellation, insufficient-balance rejection, duplicate requests, process/leader failure, ledger conservation and restart recovery.
