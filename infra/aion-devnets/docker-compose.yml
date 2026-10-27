@@ -1,0 +1,29 @@
+# LOCAL DEVELOPMENT ONLY.
+# These Anvil chains are disposable test networks, NOT public blockchains.
+# RPC ports bind to loopback to avoid exposing unlocked development accounts.
+services:
+  aion-nova:
+    image: ghcr.io/foundry-rs/foundry:stable
+    container_name: aion-nova-devnet
+    command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71101", "--block-time", "2"]
+    ports:
+      - "127.0.0.1:18545:8545"
+    healthcheck:
+      test: ["CMD-SHELL", "cast chain-id --rpc-url http://127.0.0.1:8545 | grep -q 71101"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  aion-orbit:
+    image: ghcr.io/foundry-rs/foundry:stable
+    container_name: aion-orbit-devnet
+    command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71102", "--block-time", "2"]
+    ports:
+      - "127.0.0.1:18546:8545"
+    healthcheck:
+      test: ["CMD-SHELL", "cast chain-id --rpc-url http://127.0.0.1:8545 | grep -q 71102"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
