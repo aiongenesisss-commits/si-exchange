@@ -1,6 +1,6 @@
 # SI Exchange — Arabic simulated exchange demo
 
-A runnable FastAPI demonstration with an Arabic right-to-left (RTL) dashboard, simulated BTC/SAR and ETH/SAR markets, demo balances, limit orders, basic price-time matching, and an execution ledger.
+A runnable FastAPI demonstration with an Arabic right-to-left (RTL) dashboard, 13 simulated crypto/SAR markets (BTC, ETH, BNB, SOL, XRP, ADA, DOGE, TRX, LTC, DOT, LINK, USDT, USDC), demo balances, limit orders, basic price-time matching, and an execution ledger.
 
 ## Run locally
 
@@ -11,7 +11,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 ```
 
-Open `/` for the Arabic dashboard, `/docs` for API docs, `/markets` for simulated prices, `/balances` for demo balances, `/orders` for orders, `/ledger` for simulated fills, and `/audit` for a read-only integrity check.
+Open `/` for the Arabic dashboard, `/docs` for API docs, `/markets` for the 13 simulated prices, `/balances` for demo balances, `/orders` for orders, `/ledger` for simulated fills, and `/audit` for a read-only integrity check.
 
 ## Tests
 
