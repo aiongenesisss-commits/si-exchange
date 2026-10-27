@@ -138,3 +138,10 @@ def test_online_manifest_links_to_read_only_network_registry():
     assert body["network_registry"] == "/networks"
     assert body["components"]["aion_nova_chain_id_71101"] == "planned_not_live"
     assert body["components"]["aion_orbit_chain_id_71102"] == "planned_not_live"
+
+
+def test_dashboard_includes_aion_network_status_panel():
+    page = client.get("/")
+    assert page.status_code == 200
+    assert 'id="networkStatus"' in page.text
+    assert "حالة شبكات AION" in page.text
