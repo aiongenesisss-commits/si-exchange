@@ -94,7 +94,8 @@ def test_aion_sar_is_simulation_only_and_trades_only_demo_balances():
     aion_market = markets["AION/SAR"]
     assert aion_market["is_live"] is False
     assert aion_market["simulated_price_sar"] == 0.10
-    assert "Fallback simulated price" in aion_market["price_source"]
+    assert "AION AUTONOMOUS project token" in aion_market["price_source"]
+    assert "no verified deployment" in aion_market["price_source"]
     assert client.get("/api").json()["live_trading"] is False
 
     sell = client.post("/orders", json={"market":"AION/SAR","side":"sell","account":"A","price":0.10,"quantity":10})
