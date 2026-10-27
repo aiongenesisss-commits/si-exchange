@@ -25,6 +25,10 @@ This is a **schema proposal and migration foundation**, not a claim that the app
 
 The initial schema is in `migrations/001_initial_schema.sql`. Review it and run it only against a dedicated PostgreSQL database intended for this demo. Back up any existing database first. The SQL is wrapped in a transaction and uses `IF NOT EXISTS` for repeatable object creation, but it is not a general migration framework.
 
+## Automated schema validation
+
+`scripts/verify_postgres_migration.sh` starts a disposable local PostgreSQL 16 container, applies the migration to a temporary database, checks that all six expected tables exist, and verifies the schema rejects a non-demo account type. It destroys the temporary container on exit. GitHub Actions runs this check. This validates SQL/schema behavior only; the FastAPI order engine still uses in-memory state until a transactional repository is implemented and tested.
+
 ## Required work before calling persistence operational
 
 1. Add a repository/transaction layer and use one database transaction for order acceptance, balance reservation, matching, fills, and audit events.
