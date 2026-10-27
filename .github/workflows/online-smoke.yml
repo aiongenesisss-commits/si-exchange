@@ -1,0 +1,51 @@
+name: Online Production Smoke Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check public SI Exchange endpoints
+        env:
+          BASE_URL: https://si-exchange-1vq1.vercel.app
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          base = os.environ["BASE_URL"].rstrip("/")
+          paths = ["/health", "/ready", "/online-manifest", "/markets", "/balances", "/audit", "/api"]
+          for path in paths:
+              request = urllib.request.Request(
+                  base + path,
+                  headers={"User-Agent": "AION-SI-Exchange-Online-Smoke/1.0"},
+              )
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  body = response.read()
+                  if response.status != 200:
+                      raise SystemExit(f"FAIL {path}: HTTP {response.status}")
+                  print(f"PASS {path}: HTTP {response.status}, {len(body)} bytes")
+                  if path == "/api":
+                      payload = json.loads(body)
+                      expected = {
+                          "live_trading": False,
+                          "deposits_enabled": False,
+                          "withdrawals_enabled": False,
+                      }
+                      for key, value in expected.items():
+                          if payload.get(key) is not value:
+                              raise SystemExit(f"FAIL /api: expected {key}={value}, got {payload.get(key)!r}")
+                      if payload.get("mode") != "simulation_only":
+                          raise SystemExit("FAIL /api: mode is not simulation_only")
+                      print("PASS /api safety flags: simulation-only; deposits/withdrawals/live trading disabled")
+          PY
