@@ -1,0 +1,43 @@
+name: AION Nova and Orbit local devnet smoke test
+
+on:
+  push:
+    paths:
+      - "infra/aion-networks/**"
+      - "scripts/check_aion_networks.py"
+      - ".github/workflows/aion-dual-devnet-smoke.yml"
+  pull_request:
+    paths:
+      - "infra/aion-networks/**"
+      - "scripts/check_aion_networks.py"
+      - ".github/workflows/aion-dual-devnet-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dual-devnet-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Start isolated EVM development chains
+        run: docker compose -f infra/aion-networks/docker-compose.yml up -d
+
+      - name: Verify distinct JSON-RPC chain IDs
+        run: |
+          for attempt in $(seq 1 30); do
+            if python3 scripts/check_aion_networks.py; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f infra/aion-networks/docker-compose.yml logs
+          exit 1
+
+      - name: Stop development chains
+        if: always()
+        run: docker compose -f infra/aion-networks/docker-compose.yml down --volumes

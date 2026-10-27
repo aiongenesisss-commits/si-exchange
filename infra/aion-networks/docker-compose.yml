@@ -4,7 +4,7 @@ services:
     image: ghcr.io/foundry-rs/foundry:stable
     command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71101", "--block-time", "2", "--state", "/data/state.json"]
     ports:
-      - "18545:8545"
+      - "127.0.0.1:18545:8545"
     volumes:
       - nova-data:/data
     healthcheck:
@@ -16,7 +16,7 @@ services:
     image: ghcr.io/foundry-rs/foundry:stable
     command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71102", "--block-time", "2", "--state", "/data/state.json"]
     ports:
-      - "18546:8545"
+      - "127.0.0.1:18546:8545"
     volumes:
       - orbit-data:/data
     healthcheck:
