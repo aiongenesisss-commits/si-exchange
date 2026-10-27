@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from app.main import app, orders, ledger, balances
+from app.main import app, orders, ledger, balances, INITIAL_ASSETS
 
 client = TestClient(app)
 
@@ -8,8 +8,8 @@ def setup_function():
     ledger.clear()
     balances.clear()
     balances.update({
-        "A": {"SAR": 100000.0, "BTC": 0.25, "ETH": 2.0},
-        "B": {"SAR": 100000.0, "BTC": 0.25, "ETH": 2.0},
+        "A": {"SAR": 100000.0, **INITIAL_ASSETS.copy()},
+        "B": {"SAR": 100000.0, **INITIAL_ASSETS.copy()},
     })
 
 def test_dashboard_is_arabic_rtl_and_api_is_simulation_only():
@@ -24,7 +24,7 @@ def test_dashboard_is_arabic_rtl_and_api_is_simulation_only():
 
 def test_markets_and_demo_balances():
     markets = client.get("/markets").json()
-    assert {m["symbol"] for m in markets} == {"BTC/SAR", "ETH/SAR"}
+    assert {m["symbol"] for m in markets} == {"BTC/SAR", "ETH/SAR", "BNB/SAR", "SOL/SAR", "XRP/SAR", "ADA/SAR", "DOGE/SAR", "TRX/SAR", "LTC/SAR", "DOT/SAR", "LINK/SAR", "USDT/SAR", "USDC/SAR"}
     response = client.get("/balances").json()
     assert response["mode"] == "demo_only"
     assert response["balances"]["A"]["SAR"] == 100000
