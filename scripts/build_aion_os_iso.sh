@@ -21,8 +21,10 @@ python3 -m venv "$WORK/pip-env"
   cd "$WORK"
   chmod 0755 config/hooks/live/010-install-aion.hook.chroot
   lb config \
+    --ignore-system-defaults \
     --distribution bookworm \
     --architectures amd64 \
+    --keyring-packages debian-archive-keyring \
     --binary-images iso-hybrid \
     --archive-areas "main" \
     --mirror-bootstrap "http://deb.debian.org/debian/" \
