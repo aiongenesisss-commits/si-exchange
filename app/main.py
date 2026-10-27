@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from app.market_data import get_live_prices_sar
 
 app = FastAPI(title="SI Exchange Demo API", description="Simulation only; no real-money services.", version="0.1.0")
 
@@ -94,12 +95,12 @@ INITIAL_TOTALS = {"SAR": 200000.0, **{asset: quantity * 2 for asset, quantity in
 
 PAGE = """<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SI Exchange</title>
 <style>body{margin:0;background:#0b1220;color:#edf4ff;font:16px Tahoma,Arial}header,main{max-width:1000px;margin:auto;padding:20px}header{border-bottom:1px solid #263750}h1{margin:0}p{line-height:1.7;color:#a9bad0}.warning{padding:12px;background:#382d12;border-right:4px solid #fbbf24;border-radius:8px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{background:#121d30;border:1px solid #263750;border-radius:12px;padding:16px;margin:12px 0}.price{font-size:24px;color:#5eead4}label{display:block;margin:10px 0 5px;color:#a9bad0}input,select,button{width:100%;padding:10px;border-radius:8px;border:1px solid #354760;background:#0b1525;color:white;box-sizing:border-box}button{margin-top:12px;background:#5eead4;color:#062b2b;font-weight:bold}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:right;padding:9px;border-bottom:1px solid #263750}.scroll{overflow:auto}.balance{display:inline-block;background:#0b1525;padding:10px;border-radius:8px;margin:4px}</style>
-<header><h1>SI Exchange</h1><p>لوحة تداول تجريبية بواجهة عربية RTL</p><strong style="color:#5eead4">محاكاة فقط — لا أموال حقيقية</strong></header><main><p class="warning">تنبيه: جميع الأسعار والأرصدة والأوامر افتراضية. لا توجد إيداعات أو سحوبات أو حفظ أصول أو تداول حي، وتُمسح البيانات عند إعادة تشغيل التطبيق.</p>
+<header><h1>SI Exchange</h1><p>لوحة تداول تجريبية بواجهة عربية RTL</p><strong style="color:#5eead4">محاكاة فقط — لا أموال حقيقية</strong></header><main><p class="warning">تنبيه: قد تُعرض أسعار مرجعية مباشرة من Binance مع تحويل SAR تقريبي؛ وقد تظهر أسعار احتياطية تجريبية عند تعذر المصدر. جميع الأرصدة والأوامر والتنفيذ تجريبية ومؤقتة. لا توجد إيداعات أو سحوبات أو حفظ أصول أو تداول حي.</p>
 <section class="card"><h3>الأسواق التجريبية مقابل الريال السعودي</h3><div id="marketCards" class="grid">تحميل الأسواق…</div></section><section class="card"><h3>الأرصدة التجريبية</h3><div id="balances">تحميل…</div></section>
 <div class="grid"><section class="card"><h3>إنشاء أمر محدد السعر</h3><form id="f"><label>السوق</label><select id="market"></select><label>المتداول التجريبي</label><select id="account"><option value="A">المتداول A</option><option value="B">المتداول B</option></select><label>النوع</label><select id="side"><option value="buy">شراء</option><option value="sell">بيع</option></select><label>السعر بالريال</label><input id="price" type="number" min="0.000001" step="any" value="250000" required><label>الكمية</label><input id="qty" type="number" min="0.000001" step="any" value="0.001" required><p>السعر المقترح يتغير حسب السوق. الأمر المحدد لا يُنفّذ إلا عند وجود أمر معاكس بسعر متوافق.</p><button>إرسال أمر تجريبي</button><p id="msg" role="status"></p></form></section><section class="card"><h3>ضوابط السلامة</h3><p>مطابقة أوامر محددة السعر وتسجيل التنفيذ في دفتر تجريبي. لا اتصال بمحافظ أو شبكات بلوك تشين أو مزودي دفع. ليست منصة مالية إنتاجية.</p></section></div>
 <section class="card"><h3>الأوامر</h3><div class="scroll"><table><thead><tr><th>السوق</th><th>النوع</th><th>السعر</th><th>الكمية</th><th>المتبقي</th><th>الحالة</th></tr></thead><tbody id="orders"></tbody></table></div></section>
 <section class="card"><h3>دفتر التنفيذ التجريبي</h3><div class="scroll"><table><thead><tr><th>السوق</th><th>النوع</th><th>السعر</th><th>الكمية</th><th>القيمة SAR</th></tr></thead><tbody id="ledger"></tbody></table></div></section></main>
-<script>const $=id=>document.getElementById(id),fmt=n=>Number(n).toLocaleString('ar-SA',{maximumFractionDigits:8});async function get(p){let r=await fetch(p);if(!r.ok)throw Error('تعذر الاتصال');return r.json()}let marketData=[];function updatePriceDefaults(){const m=marketData.find(x=>x.symbol===$('market').value);if(m){$('price').value=m.simulated_price_sar;$('qty').value=m.symbol.startsWith('BTC/')?'0.001':m.symbol.startsWith('ETH/')?'0.01':m.symbol.startsWith('USDT/')||m.symbol.startsWith('USDC/')?'10':'1'}}async function refresh(){try{let m=await get('/markets'),b=await get('/balances'),o=await get('/orders'),l=await get('/ledger');marketData=m;$('marketCards').innerHTML=m.map(x=>'<section class="card"><h3>'+x.symbol+'</h3><div class="price">'+fmt(x.simulated_price_sar)+' ر.س</div><small>سعر افتراضي للتجربة</small></section>').join('');const selected=$('market').value;$('market').innerHTML=m.map(x=>'<option value="'+x.symbol+'">'+x.symbol+'</option>').join('');if(m.some(x=>x.symbol===selected))$('market').value=selected;updatePriceDefaults();$('balances').innerHTML=Object.entries(b.balances).map(([a,items])=>'<div><b>المتداول '+a+'</b>'+Object.entries(items).map(([k,v])=>'<span class="balance">'+k+': <b>'+fmt(v)+'</b></span>').join('')+'</div>').join('');$('orders').innerHTML=o.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.remaining_quantity)+'</td><td>'+x.status+'</td></tr>').join('')||'<tr><td colspan="6">لا توجد أوامر</td></tr>';$('ledger').innerHTML=l.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.simulated_value_sar)+'</td></tr>').join('')||'<tr><td colspan="5">لا توجد عمليات تنفيذ</td></tr>'}catch(e){$('msg').textContent=e.message}}$('market').addEventListener('change',updatePriceDefaults);$('f').addEventListener('submit',async e=>{e.preventDefault();try{let r=await fetch('/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market:$('market').value,side:$('side').value,account:$('account').value,price:Number($('price').value),quantity:Number($('qty').value)})}),d=await r.json();if(!r.ok)throw Error(JSON.stringify(d.detail));$('msg').textContent='تم إنشاء الأمر التجريبي: '+d.status;await refresh()}catch(e){$('msg').textContent='خطأ: '+e.message}});refresh();</script></html>"""
+<script>const $=id=>document.getElementById(id),fmt=n=>Number(n).toLocaleString('ar-SA',{maximumFractionDigits:8});async function get(p){let r=await fetch(p);if(!r.ok)throw Error('تعذر الاتصال');return r.json()}let marketData=[];function updatePriceDefaults(){const m=marketData.find(x=>x.symbol===$('market').value);if(m){$('price').value=m.simulated_price_sar;$('qty').value=m.symbol.startsWith('BTC/')?'0.001':m.symbol.startsWith('ETH/')?'0.01':m.symbol.startsWith('USDT/')||m.symbol.startsWith('USDC/')?'10':'1'}}async function refresh(){try{let m=await get('/markets'),b=await get('/balances'),o=await get('/orders'),l=await get('/ledger');marketData=m;$('marketCards').innerHTML=m.map(x=>'<section class="card"><h3>'+x.symbol+'</h3><div class="price">'+fmt(x.simulated_price_sar)+' ر.س</div><small>'+(x.is_live?('سعر سوق مباشر — '+x.price_source):x.price_source)+'</small></section>').join('');const selected=$('market').value;$('market').innerHTML=m.map(x=>'<option value="'+x.symbol+'">'+x.symbol+'</option>').join('');if(m.some(x=>x.symbol===selected))$('market').value=selected;updatePriceDefaults();$('balances').innerHTML=Object.entries(b.balances).map(([a,items])=>'<div><b>المتداول '+a+'</b>'+Object.entries(items).map(([k,v])=>'<span class="balance">'+k+': <b>'+fmt(v)+'</b></span>').join('')+'</div>').join('');$('orders').innerHTML=o.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.remaining_quantity)+'</td><td>'+x.status+'</td></tr>').join('')||'<tr><td colspan="6">لا توجد أوامر</td></tr>';$('ledger').innerHTML=l.slice().reverse().map(x=>'<tr><td>'+x.market+'</td><td>'+(x.side==='buy'?'شراء':'بيع')+'</td><td>'+fmt(x.price)+'</td><td>'+fmt(x.quantity)+'</td><td>'+fmt(x.simulated_value_sar)+'</td></tr>').join('')||'<tr><td colspan="5">لا توجد عمليات تنفيذ</td></tr>'}catch(e){$('msg').textContent=e.message}}$('market').addEventListener('change',updatePriceDefaults);$('f').addEventListener('submit',async e=>{e.preventDefault();try{let r=await fetch('/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market:$('market').value,side:$('side').value,account:$('account').value,price:Number($('price').value),quantity:Number($('qty').value)})}),d=await r.json();if(!r.ok)throw Error(JSON.stringify(d.detail));$('msg').textContent='تم إنشاء الأمر التجريبي: '+d.status;await refresh()}catch(e){$('msg').textContent='خطأ: '+e.message}});refresh();</script></html>"""
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
@@ -115,7 +116,29 @@ def health():
 
 @app.get("/markets")
 def get_markets():
-    return [{"symbol":m.value,"simulated_price_sar":p} for m,p in prices.items()]
+    live = get_live_prices_sar()
+    result = []
+    for market, fallback_price in prices.items():
+        record = (live or {}).get(market.value)
+        if record:
+            result.append({
+                "symbol": market.value,
+                "simulated_price_sar": record["price_sar"],
+                "is_live": record["is_live"],
+                "price_source": record["price_source"],
+                "updated_at": record["updated_at"],
+                "trading_mode": "simulation_only",
+            })
+        else:
+            result.append({
+                "symbol": market.value,
+                "simulated_price_sar": fallback_price,
+                "is_live": False,
+                "price_source": "Fallback simulated price; live market data unavailable",
+                "updated_at": None,
+                "trading_mode": "simulation_only",
+            })
+    return result
 
 @app.get("/balances")
 def get_balances():
