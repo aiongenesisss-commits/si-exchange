@@ -1,0 +1,29 @@
+# Local development only: these are single-node Anvil chains, NOT public production networks.
+services:
+  aion-nova:
+    image: ghcr.io/foundry-rs/foundry:stable
+    command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71101", "--block-time", "2", "--state", "/data/state.json"]
+    ports:
+      - "18545:8545"
+    volumes:
+      - nova-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cast chain-id --rpc-url http://127.0.0.1:8545 | grep -qx 71101"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  aion-orbit:
+    image: ghcr.io/foundry-rs/foundry:stable
+    command: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "71102", "--block-time", "2", "--state", "/data/state.json"]
+    ports:
+      - "18546:8545"
+    volumes:
+      - orbit-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cast chain-id --rpc-url http://127.0.0.1:8545 | grep -qx 71102"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  nova-data:
+  orbit-data:
