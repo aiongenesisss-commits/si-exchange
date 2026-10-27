@@ -7,8 +7,8 @@ import urllib.error
 import urllib.request
 
 NETWORKS = (
-    ("AION Nova", os.getenv("AION_NOVA_RPC_URL", "http://127.0.0.1:8545"), 71101),
-    ("AION Orbit", os.getenv("AION_ORBIT_RPC_URL", "http://127.0.0.1:8546"), 71102),
+    ("AION Nova", os.getenv("AION_NOVA_RPC_URL", "http://127.0.0.1:18545"), 71101),
+    ("AION Orbit", os.getenv("AION_ORBIT_RPC_URL", "http://127.0.0.1:18546"), 71102),
 )
 
 
