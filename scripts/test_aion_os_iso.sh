@@ -9,7 +9,7 @@ QEMU_LOG="$(mktemp)"
 PID=""
 cleanup() {
   if [[ -n "$PID" ]]; then kill "$PID" >/dev/null 2>&1 || true; wait "$PID" >/dev/null 2>&1 || true; fi
-  rm -f "$LOG" "$QEMU_LOG"
+  rm -f "$LOG" "$QEMU_LOG" "$LOG.health"
 }
 trap cleanup EXIT
 qemu-system-x86_64 \
