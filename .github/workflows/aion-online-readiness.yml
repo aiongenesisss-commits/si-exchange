@@ -1,0 +1,33 @@
+name: AION Online Readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 */6 * * *"
+  push:
+    paths:
+      - "scripts/check_online_services.py"
+      - ".github/workflows/aion-online-readiness.yml"
+      - "docs/AION-ONLINE-FOUNDATION.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aion-online-readiness
+  cancel-in-progress: true
+
+jobs:
+  check-public-endpoints:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Check HTTPS reachability of configured public services
+        env:
+          AION_EXCHANGE_URL: ${{ vars.AION_EXCHANGE_URL }}
+          AION_NOVA_RPC_HEALTH_URL: ${{ vars.AION_NOVA_RPC_HEALTH_URL }}
+          AION_ORBIT_RPC_HEALTH_URL: ${{ vars.AION_ORBIT_RPC_HEALTH_URL }}
+          AION_COIN_EXPLORER_URL: ${{ vars.AION_COIN_EXPLORER_URL }}
+        run: python3 scripts/check_online_services.py
