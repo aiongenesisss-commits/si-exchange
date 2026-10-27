@@ -1,7 +1,7 @@
-"""Optional Binance Spot Testnet order lifecycle smoke test.
+"""Optional Binance Spot TESTNET order lifecycle smoke test.
 
 No order is submitted unless ALLOW_TESTNET_ORDER=true is explicitly set.
-Uses a low-priced BTC/USDT buy limit on testnet funds only, then queries and cancels it.
+Uses testnet funds only. If querying fails after submission, attempts best-effort cancellation.
 """
 from __future__ import annotations
 
@@ -52,14 +52,23 @@ def main() -> int:
         print(json.dumps(result, sort_keys=True))
         return 0
     except Exception as exc:
-        # Never print keys, secrets, headers, or full request objects.
+        # If a submit succeeded but a later request failed, make a best-effort cleanup attempt.
+        # A cancellation failure is reported by type only; never print request data or credentials.
+        cleanup_status = "not_needed"
+        if order_id is not None:
+            try:
+                cancelled = adapter.cancel_order(order_id)
+                cleanup_status = cancelled.status
+            except Exception as cleanup_exc:
+                cleanup_status = "failed:" + type(cleanup_exc).__name__
         print(json.dumps({
             "mode": "external_testnet_only",
             "submitted": order_id is not None,
             "order_id": order_id,
+            "cleanup_status": cleanup_status,
             "error_type": type(exc).__name__,
-            "error": str(exc).replace("\n", " ")[:240],
-            "warning": "If the request timed out after submission, inspect the testnet account before retrying.",
+            "error": str(exc).replace("\\n", " ")[:240],
+            "warning": "A timeout may leave the exchange outcome unknown. Inspect the testnet account before retrying.",
         }))
         return 1
 
