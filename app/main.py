@@ -39,6 +39,7 @@ class Market(str, Enum):
     LTC_SAR = "LTC/SAR"
     DOT_SAR = "DOT/SAR"
     LINK_SAR = "LINK/SAR"
+    AION_SAR = "AION/SAR"
     USDT_SAR = "USDT/SAR"
     USDC_SAR = "USDC/SAR"
 class Side(str, Enum):
@@ -92,13 +93,15 @@ prices = {
     Market.LTC_SAR: 300.0,
     Market.DOT_SAR: 25.0,
     Market.LINK_SAR: 60.0,
+    # Clearly simulated seed only; not a live market quote or claim of deployed token/liquidity.
+    Market.AION_SAR: 0.10,
     Market.USDT_SAR: 3.75,
     Market.USDC_SAR: 3.75,
 }
 INITIAL_ASSETS = {
     "BTC": 0.25, "ETH": 2.0, "BNB": 10.0, "SOL": 20.0,
     "XRP": 500.0, "ADA": 500.0, "DOGE": 1000.0, "TRX": 5000.0,
-    "LTC": 2.0, "DOT": 20.0, "LINK": 20.0, "USDT": 1000.0, "USDC": 1000.0,
+    "LTC": 2.0, "DOT": 20.0, "LINK": 20.0, "AION": 100000.0, "USDT": 1000.0, "USDC": 1000.0,
 }
 balances = {
     account: {"SAR": 100000.0, **INITIAL_ASSETS.copy()}
