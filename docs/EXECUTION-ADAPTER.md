@@ -1,22 +1,33 @@
-# Execution adapter — current scope
+# Execution adapters — current scope
 
-## What was added
+## Available modes
 
-- A provider-neutral Python protocol for submit, read, and cancel order operations.
-- An in-process adapter for local simulation, with decimal-string validation, idempotency-key replay protection, and cancellation.
-- A fail-closed factory controlled by `EXECUTION_MODE`. Missing configuration defaults to `simulation`; `simulation` and `sandbox` both select the local in-process adapter only.
-- `REAL_TRADING_ENABLED=true` is rejected because production execution is not implemented. Unknown execution modes are rejected.
+- `EXECUTION_MODE=simulation` (default): local in-process simulation only.
+- `EXECUTION_MODE=sandbox`: same local simulation adapter.
+- `EXECUTION_MODE=binance_testnet`: explicit Binance Spot Testnet adapter, only when server-side `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET` are configured. This adapter hard-codes `https://testnet.binance.vision`; there is no configurable base URL and it cannot route to Binance production.
+- `REAL_TRADING_ENABLED=true`: rejected. Production execution is not implemented.
 
-## Important boundary
+## Binance testnet boundary
 
-This is **not** an integration with Binance, another exchange, or an external provider sandbox. It does not route orders, perform matching, hold funds, access wallets, or touch a blockchain. It is a small tested seam for future provider integration, separate from the existing demo API. The existing application continues to run its own simulation path.
+The adapter supports limit orders on explicit USDT spot pairs such as `BTC/USDT`. It intentionally rejects the app's SAR-denominated markets because those are not Binance spot symbols. It signs private requests, uses the exchange's client order ID field, and supports submit/query/cancel. HTTP calls are covered by mocked tests; no real external testnet order has been submitted as part of CI.
 
-## Next gates
+The testnet order registry is process-local, not durable. A restart can prevent lookup/cancellation by returned order ID through this adapter. This is a development bridge, not a production ledger or complete execution system.
 
-1. Select and approve an execution provider and obtain its documented sandbox access.
-2. Implement a separate provider-specific sandbox adapter and contract tests without production credentials.
-3. Add authentication/authorization, durable transactional ledger and reservations, reconciliation, observability, and security review.
-4. Obtain jurisdiction-specific legal/compliance clearance.
-5. Keep production routing disabled until the owner explicitly approves it after all gates pass.
+## Credentials and setup
 
-Never commit provider secrets or wallet keys. A successful build or market-data feed is not evidence that real order execution is available.
+1. Create a Spot Testnet account and API key through the official testnet portal.
+2. Store its key and secret only as server-side environment secrets:
+   - `BINANCE_TESTNET_API_KEY`
+   - `BINANCE_TESTNET_API_SECRET`
+3. Set `EXECUTION_MODE=binance_testnet` only in a dedicated non-production test environment.
+4. Do not use production exchange credentials. Do not commit secrets, put them in client-side code, or send them in chat.
+
+Official docs:
+- Spot API documentation: https://github.com/binance/binance-spot-api-docs
+- Spot Testnet overview and endpoint: https://github.com/binance/binance-spot-api-docs/blob/master/testnet/general-info.md
+
+## Before production could ever be considered
+
+Add durable transactional order storage and reconciliation, account authorization, robust retries and unknown-outcome handling, exchange-filter validation, rate-limit handling, audit logging, concurrency/restart/partial-fill tests, independent security review, and jurisdiction-specific legal/compliance clearance. Keep production routing disabled until all gates pass and the owner explicitly approves it.
+
+No live trading, deposits, withdrawals, custody, wallet integration, or blockchain actions are implemented here. Never claim real order execution based on a passing build or a market-data feed.
