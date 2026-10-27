@@ -31,3 +31,12 @@ jobs:
       - name: Confirm health route is registered inside the image
         run: |
           docker run --rm si-exchange-linux:ci python -c 'from app.main import app; routes = {route.path for route in app.routes}; assert "/health" in routes, f"/health route missing: {sorted(routes)}"; print("Application imports and health route is registered.")'
+
+      - name: Export and verify offline bundle
+        env:
+          SI_EXCHANGE_IMAGE: si-exchange-linux:ci
+          SI_EXCHANGE_OUT_DIR: dist/si-exchange-linux-bundle
+        run: |
+          bash scripts/export_linux_bundle.sh
+          tar -tzf dist/si-exchange-linux-bundle.tar.gz
+          (cd dist/si-exchange-linux-bundle && sha256sum -c SHA256SUMS)
