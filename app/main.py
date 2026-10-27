@@ -1,10 +1,12 @@
 """Arabic RTL simulation-only SI Exchange demo."""
 from datetime import datetime, timezone
+import json
+import math
 from enum import Enum
 from threading import Lock
 from typing import List
 from uuid import uuid4
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -38,6 +40,10 @@ class Order(BaseModel):
 class Fill(BaseModel):
     id: str
     order_id: str
+    maker_order_id: str
+    taker_order_id: str
+    buyer_account: Account
+    seller_account: Account
     market: Market
     side: Side
     price: float
@@ -50,6 +56,8 @@ orders: List[Order] = []
 ledger: List[Fill] = []
 prices = {Market.BTC_SAR: 250000.0, Market.ETH_SAR: 9000.0}
 balances = {account: {"SAR": 100000.0, "BTC": 0.25, "ETH": 2.0} for account in ("A", "B")}
+idempotency_keys = {}  # process-local demo cache; not durable across restarts/instances
+INITIAL_TOTALS = {"SAR": 200000.0, "BTC": 0.5, "ETH": 4.0}
 
 PAGE = """<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SI Exchange</title>
 <style>body{margin:0;background:#0b1220;color:#edf4ff;font:16px Tahoma,Arial}header,main{max-width:1000px;margin:auto;padding:20px}header{border-bottom:1px solid #263750}h1{margin:0}p{line-height:1.7;color:#a9bad0}.warning{padding:12px;background:#382d12;border-right:4px solid #fbbf24;border-radius:8px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{background:#121d30;border:1px solid #263750;border-radius:12px;padding:16px;margin:12px 0}.price{font-size:24px;color:#5eead4}label{display:block;margin:10px 0 5px;color:#a9bad0}input,select,button{width:100%;padding:10px;border-radius:8px;border:1px solid #354760;background:#0b1525;color:white;box-sizing:border-box}button{margin-top:12px;background:#5eead4;color:#062b2b;font-weight:bold}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:right;padding:9px;border-bottom:1px solid #263750}.scroll{overflow:auto}.balance{display:inline-block;background:#0b1525;padding:10px;border-radius:8px;margin:4px}</style>
@@ -87,10 +95,22 @@ def get_orders():
         return list(orders)
 
 @app.post("/orders", response_model=Order, status_code=201)
-def place_order(request: OrderRequest):
+def place_order(request: OrderRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     now = datetime.now(timezone.utc)
+    fingerprint = json.dumps(request.model_dump(mode="json"), sort_keys=True)
     order = Order(id=str(uuid4()),market=request.market,side=request.side,account=request.account,price=request.price,quantity=request.quantity,remaining_quantity=request.quantity,status="open",created_at=now)
     with lock:
+        if idempotency_key:
+            if len(idempotency_key) > 200:
+                raise HTTPException(status_code=400, detail="Idempotency-Key must be 200 characters or fewer")
+            prior = idempotency_keys.get(idempotency_key)
+            if prior:
+                if prior[0] != fingerprint:
+                    raise HTTPException(status_code=409, detail="Idempotency-Key already used with a different request")
+                for prior_order in orders:
+                    if prior_order.id == prior[1]:
+                        return prior_order
+                raise HTTPException(status_code=409, detail="Idempotency-Key record is inconsistent")
         matches=[o for o in orders if o.market==order.market and o.side!=order.side and o.account!=order.account and o.status in ("open","partially_filled") and (o.price<=order.price if order.side==Side.BUY else o.price>=order.price)]
         matches.sort(key=lambda o:(o.price if order.side==Side.BUY else -o.price,o.created_at))
         for resting in matches:
@@ -106,13 +126,46 @@ def place_order(request: OrderRequest):
             balances[buyer][base_asset] = round(balances[buyer][base_asset] + qty, 12)
             balances[seller][base_asset] = round(balances[seller][base_asset] - qty, 12)
             balances[seller]["SAR"] = round(balances[seller]["SAR"] + value, 8)
-            ledger.append(Fill(id=str(uuid4()),order_id=order.id,market=order.market,side=order.side,price=resting.price,quantity=qty,simulated_value_sar=value,created_at=now))
+            ledger.append(Fill(id=str(uuid4()),order_id=order.id,maker_order_id=resting.id,taker_order_id=order.id,buyer_account=buyer,seller_account=seller,market=order.market,side=order.side,price=resting.price,quantity=qty,simulated_value_sar=value,created_at=now))
             resting.remaining_quantity=round(resting.remaining_quantity-qty,12)
             resting.status="filled" if resting.remaining_quantity==0 else "partially_filled"
             order.remaining_quantity=round(order.remaining_quantity-qty,12)
         order.status="filled" if order.remaining_quantity==0 else ("partially_filled" if order.remaining_quantity<order.quantity else "open")
         orders.append(order)
+        if idempotency_key:
+            idempotency_keys[idempotency_key] = (fingerprint, order.id)
     return order
+
+@app.get("/audit")
+def integrity_audit():
+    """Check demo order/fill linkage, balance conservation, and nonnegative balances."""
+    issues = []
+    with lock:
+        known_order_ids = {o.id for o in orders}
+        filled_by_order = {o.id: 0.0 for o in orders}
+        for fill in ledger:
+            if fill.maker_order_id not in known_order_ids or fill.taker_order_id not in known_order_ids:
+                issues.append(f"fill {fill.id}: references unknown order")
+            if fill.maker_order_id == fill.taker_order_id:
+                issues.append(f"fill {fill.id}: maker and taker are identical")
+            if fill.buyer_account == fill.seller_account:
+                issues.append(f"fill {fill.id}: self-trade detected")
+            filled_by_order[fill.maker_order_id] = filled_by_order.get(fill.maker_order_id, 0.0) + fill.quantity
+            filled_by_order[fill.taker_order_id] = filled_by_order.get(fill.taker_order_id, 0.0) + fill.quantity
+            if not math.isfinite(fill.quantity) or fill.quantity <= 0 or not math.isfinite(fill.simulated_value_sar):
+                issues.append(f"fill {fill.id}: invalid numeric values")
+        for order in orders:
+            if abs((filled_by_order.get(order.id, 0.0) + order.remaining_quantity) - order.quantity) > 1e-8:
+                issues.append(f"order {order.id}: quantity does not reconcile with fills and remainder")
+        for account, assets in balances.items():
+            for asset, value in assets.items():
+                if not math.isfinite(value) or value < -1e-8:
+                    issues.append(f"account {account} asset {asset}: invalid balance")
+        for asset, expected in INITIAL_TOTALS.items():
+            actual = sum(account_balances[asset] for account_balances in balances.values())
+            if abs(actual - expected) > 1e-6:
+                issues.append(f"asset {asset}: balance conservation mismatch")
+        return {"mode": "simulation_only", "valid": not issues, "orders_checked": len(orders), "fills_checked": len(ledger), "issues": issues}
 
 @app.get("/ledger", response_model=List[Fill])
 def get_ledger():
