@@ -11,7 +11,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 ```
 
-Open `/` for the Arabic dashboard, `/docs` for API docs, `/markets` for the 13 simulated prices, `/balances` for demo balances, `/orders` for orders, `/ledger` for simulated fills, and `/audit` for a read-only integrity check.
+Open `/` for the Arabic dashboard, `/docs` for API docs, `/networks` for the read-only AION Nova/Orbit status registry, `/online-manifest` for an online component inventory, `/markets` for simulated market state/reference prices, `/balances` for demo balances, `/orders` for orders, `/ledger` for simulated fills, and `/audit` for a read-only integrity check. `/networks` intentionally reports both chains as planned and the free-deployment promotion as disabled until public infrastructure is actually verified.
 
 ## Tests
 
