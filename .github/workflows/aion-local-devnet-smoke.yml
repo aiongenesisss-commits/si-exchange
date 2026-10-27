@@ -1,0 +1,68 @@
+name: AION Local Devnet Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - "networks/local-devnet/**"
+      - ".github/workflows/aion-local-devnet-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Start local EVM chains
+        working-directory: networks/local-devnet
+        run: docker compose -f compose.yaml up -d
+
+      - name: Verify independent chain IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_chain() {
+            local rpc="$1"
+            local expected="$2"
+            for attempt in $(seq 1 40); do
+              actual="$(curl --silent --show-error --max-time 2 \
+                -H 'content-type: application/json' \
+                --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+                "$rpc" | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["result"],16))' 2>/dev/null || true)"
+              if [[ "$actual" == "$expected" ]]; then
+                echo "$rpc reports chain ID $actual"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "Expected chain ID $expected from $rpc; last result was '$actual'" >&2
+            return 1
+          }
+          check_chain http://127.0.0.1:8545 71101
+          check_chain http://127.0.0.1:8546 71102
+
+      - name: Confirm both RPC endpoints respond to block queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for rpc in http://127.0.0.1:8545 http://127.0.0.1:8546; do
+            curl --fail --silent --show-error --max-time 5 \
+              -H 'content-type: application/json' \
+              --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":2}' \
+              "$rpc" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert "result" in r and int(r["result"],16) >= 0; print("RPC block query OK")'
+          done
+
+      - name: Collect logs on failure
+        if: failure()
+        working-directory: networks/local-devnet
+        run: docker compose -f compose.yaml logs --no-color
+
+      - name: Stop local EVM chains
+        if: always()
+        working-directory: networks/local-devnet
+        run: docker compose -f compose.yaml down
