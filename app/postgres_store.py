@@ -88,13 +88,16 @@ def balances():
     return {"mode": "demo_only", "balances": result}
 
 
-def _reserved(conn, account, asset):
+def _reserved(conn, account, asset, exclude_order_ids=()):
     rows = conn.execute(
-        """SELECT market,side,limit_price,remaining_quantity FROM demo_orders
+        """SELECT id,market,side,limit_price,remaining_quantity FROM demo_orders
            WHERE account_id=%s AND status IN ('open','partially_filled')""", (account,)
     ).fetchall()
+    excluded = {str(value) for value in exclude_order_ids}
     total = Decimal(0)
     for row in rows:
+        if str(row["id"]) in excluded:
+            continue
         base = row["market"].split("/")[0]
         if asset == "SAR" and row["side"] == "buy":
             total += row["limit_price"] * row["remaining_quantity"]
@@ -193,7 +196,12 @@ def place_order(request, idempotency_key=None):
             # Funds were reserved at order placement. Re-check live available balance under the same lock.
             buyer_sar = conn.execute("SELECT available_amount FROM demo_balances WHERE account_id=%s AND asset='SAR' FOR UPDATE", (buyer,)).fetchone()["available_amount"]
             seller_base = conn.execute("SELECT available_amount FROM demo_balances WHERE account_id=%s AND asset=%s FOR UPDATE", (seller, base)).fetchone()["available_amount"]
-            if buyer_sar < value or seller_base < qty:
+            # Exclude the maker/taker orders whose reserved funds are being consumed by this fill,
+            # but preserve every other active order's reservation.
+            current_orders = (order_id, maker["id"])
+            buyer_free_sar = buyer_sar - _reserved(conn, buyer, "SAR", current_orders)
+            seller_free_base = seller_base - _reserved(conn, seller, base, current_orders)
+            if buyer_free_sar < value or seller_free_base < qty:
                 continue
             conn.execute("UPDATE demo_balances SET available_amount=available_amount-%s,updated_at=now() WHERE account_id=%s AND asset='SAR'", (value,buyer))
             conn.execute("UPDATE demo_balances SET available_amount=available_amount+%s,updated_at=now() WHERE account_id=%s AND asset=%s", (qty,buyer,base))
