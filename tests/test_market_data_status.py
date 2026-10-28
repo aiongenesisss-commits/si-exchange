@@ -100,3 +100,13 @@ def test_dashboard_renders_source_and_timestamp_fields():
     assert "x.source" in response.text
     assert "x.updated_at" in response.text
     assert "x.age_seconds" in response.text
+
+
+def test_dashboard_escapes_external_market_status_text():
+    with TestClient(main.app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "esc=s=>String(s??'')" in response.text
+    assert "المصدر: '+esc(x.source)" in response.text
+    assert "esc(x.updated_at||'غير متاح')" in response.text
