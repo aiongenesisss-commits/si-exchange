@@ -16,6 +16,34 @@ from app import postgres_store
 
 app = FastAPI(title="SI Exchange Demo API", description="Simulation only; no real-money services.", version="0.1.0")
 
+# Production guard: this app has no verified identity provider/account isolation yet.
+# Lock private demo-account APIs on managed hosting until authentication is implemented.
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+_PRIVATE_API_PATHS = {"/balances", "/available-balances", "/orders", "/ledger", "/audit"}
+
+
+def _is_managed_deployment() -> bool:
+    return any(os.getenv(name) for name in ("VERCEL", "RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID"))
+
+
+@app.middleware("http")
+async def lock_private_demo_apis_until_auth(request: Request, call_next):
+    path = request.url.path
+    is_private = path in _PRIVATE_API_PATHS or path.startswith("/orders/")
+    if is_private and (_is_managed_deployment() or os.getenv("AION_ACCESS_MODE", "").strip().lower() == "locked"):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Private demo APIs are locked until verified authentication and account isolation are configured.",
+                "code": "private_api_locked",
+                "simulation_only": True,
+            },
+        )
+    return await call_next(request)
+
+
 
 def _postgres_enabled() -> bool:
     return os.getenv("AION_STORAGE_BACKEND", "memory").strip().lower() == "postgres"
