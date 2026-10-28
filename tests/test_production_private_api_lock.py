@@ -41,6 +41,9 @@ def test_public_read_only_routes_remain_available_when_private_routes_are_locked
     _clear_managed_env(monkeypatch)
     monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
 
+    # These routes are present on the PR's base branch; avoid depending on
+    # market-data-status until its separate feature PR is merged.
     assert client.get("/health").status_code == 200
     assert client.get("/markets").status_code == 200
-    assert client.get("/market-data-status").status_code == 200
+    assert client.get("/networks").status_code == 200
+    assert client.get("/online-manifest").status_code == 200
