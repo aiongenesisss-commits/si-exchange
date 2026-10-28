@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from app.market_data import get_live_prices_sar
-from app import postgres_store
+from app import postgres_store, redis_store
 
 app = FastAPI(title="SI Exchange Demo API", description="Simulation only; no real-money services.", version="0.1.0")
 
@@ -21,12 +21,39 @@ def _postgres_enabled() -> bool:
     return os.getenv("AION_STORAGE_BACKEND", "memory").strip().lower() == "postgres"
 
 
+def _redis_enabled() -> bool:
+    return os.getenv("AION_STORAGE_BACKEND", "memory").strip().lower() == "redis"
+
+
+def _persist_redis_state():
+    redis_store.save_state({
+        "balances": balances,
+        "orders": [item.model_dump(mode="json") for item in orders],
+        "ledger": [item.model_dump(mode="json") for item in ledger],
+        "idempotency_keys": {key: {"fingerprint": value[0], "order_id": value[1]} for key, value in idempotency_keys.items()},
+    })
+
+
 @app.on_event("startup")
 def configure_storage():
     if _postgres_enabled():
         # Fail closed: never silently switch to volatile memory if PostgreSQL is requested.
         postgres_store.check_connection()
         postgres_store.initialize_demo_accounts()
+    elif _redis_enabled():
+        # Redis is already provisioned with a persistent Railway volume. Never fall back silently.
+        redis_store.check_connection()
+        state = redis_store.load_state()
+        if state:
+            balances.clear()
+            balances.update(state["balances"])
+            orders[:] = [Order.model_validate(item) for item in state.get("orders", [])]
+            ledger[:] = [Fill.model_validate(item) for item in state.get("ledger", [])]
+            idempotency_keys.clear()
+            idempotency_keys.update({
+                key: (item["fingerprint"], item["order_id"])
+                for key, item in state.get("idempotency_keys", {}).items()
+            })
 
 class Market(str, Enum):
     BTC_SAR = "BTC/SAR"
@@ -365,6 +392,12 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
         orders.append(order)
         if idempotency_key:
             idempotency_keys[idempotency_key] = (fingerprint, order.id)
+        if _redis_enabled():
+            try:
+                _persist_redis_state()
+            except Exception:
+                # Fail the request rather than claim a saved order if persistence fails.
+                raise HTTPException(status_code=503, detail="Redis persistence failed; order state requires reconciliation")
     return order
 
 @app.get("/audit")
