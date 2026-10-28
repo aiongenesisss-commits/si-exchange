@@ -228,6 +228,33 @@ def online_manifest():
         "security_note": "Never send private keys, seed phrases, API secrets, or signing credentials to this public API.",
     }
 
+@app.get("/production-readiness")
+def production_readiness():
+    """Report production blockers without exposing secrets or implying readiness."""
+    managed = any(os.getenv(name) for name in ("VERCEL", "RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID"))
+    postgres_configured = (
+        os.getenv("AION_STORAGE_BACKEND", "memory").strip().lower() == "postgres"
+        and bool(os.getenv("DATABASE_URL"))
+    )
+    blockers = ["verified_authentication_not_implemented", "per_user_account_isolation_not_implemented"]
+    if not postgres_configured:
+        blockers.append("persistent_postgresql_not_configured")
+    return {
+        "status": "not_production_ready",
+        "mode": "simulation_only",
+        "checks": {
+            "verified_authentication": False,
+            "per_user_account_isolation": False,
+            "persistent_database_configured": postgres_configured,
+            "managed_deployment_detected": managed,
+            "real_deposits_withdrawals_custody": False,
+            "live_trading": False,
+        },
+        "blockers": blockers,
+        "note": "Configuration presence is not a successful connection test. This endpoint never enables financial capabilities.",
+    }
+
+
 @app.get("/markets")
 def get_markets():
     live = get_live_prices_sar()
