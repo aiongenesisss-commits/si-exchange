@@ -6,7 +6,8 @@ The current SI Exchange demo does not yet verify user identity or isolate accoun
 ## Behavior
 - On Vercel or Railway, private demo-account routes return HTTP 503 with `code=private_api_locked`.
 - The same lock can be enabled locally with `AION_ACCESS_MODE=locked`.
-- Public read-only health, market reference data, market-data quality, network registry, and online manifest routes remain available.
+- Public read-only health, market reference data, network registry, and online manifest routes remain available on this branch's base.
+- Market-data quality status is being developed separately and is not assumed to be present until its feature change is merged.
 - Local development remains usable without a managed-hosting marker so the existing simulation tests and local demo workflow can continue.
 - No live orders, deposits, withdrawals, custody, wallet signing, or money movement are introduced.
 
