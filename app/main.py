@@ -163,6 +163,12 @@ def health():
             return {"status":"ok","mode":"simulation_only","storage":"postgres"}
         except Exception:
             raise HTTPException(status_code=503, detail="Configured PostgreSQL storage unavailable")
+    if _redis_enabled():
+        try:
+            redis_store.check_connection()
+            return {"status":"ok","mode":"simulation_only","storage":"redis"}
+        except Exception:
+            raise HTTPException(status_code=503, detail="Configured Redis storage unavailable")
     return {"status":"ok","mode":"simulation_only","storage":"memory_demo"}
 
 @app.get("/ready")
@@ -182,6 +188,20 @@ def readiness():
             }
         except Exception:
             raise HTTPException(status_code=503, detail="Configured PostgreSQL storage unavailable")
+    if _redis_enabled():
+        try:
+            redis_store.check_connection()
+            return {
+                "status": "ready",
+                "mode": "simulation_only",
+                "storage": "redis",
+                "durable_demo_storage": True,
+                "real_money_enabled": False,
+                "blockchain_connected": False,
+                "digital_vault_live": False,
+            }
+        except Exception:
+            raise HTTPException(status_code=503, detail="Configured Redis storage unavailable")
     return {
         "status": "ready",
         "mode": "simulation_only",
@@ -244,7 +264,7 @@ def online_manifest():
         "network_registry": "/networks",
         "components": {
             "demo_exchange": "available",
-            "persistent_storage": "configured_only_when_AION_STORAGE_BACKEND_postgres",
+            "persistent_storage": "configured_only_when_AION_STORAGE_BACKEND_is_postgres_or_redis",
             "aion_nova_chain_id_71101": "planned_not_live",
             "aion_orbit_chain_id_71102": "planned_not_live",
             "aion_coin_on_chain": "not_verified_deployed",
