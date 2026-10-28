@@ -258,6 +258,73 @@ def get_markets():
             })
     return result
 
+@app.get("/market-data-status")
+def get_market_data_status():
+    """Read-only quote quality status; never treats fallback/demo prices as live."""
+    live = get_live_prices_sar()
+    now = datetime.now(timezone.utc)
+    entries = []
+    for market in prices:
+        record = (live or {}).get(market.value)
+        if market == Market.AION_SAR:
+            entries.append({
+                "symbol": market.value,
+                "status": "simulated_unverified",
+                "is_live": False,
+                "source": "AION project token; no verified live quote",
+                "updated_at": None,
+                "age_seconds": None,
+                "executable_sar_quote": False,
+            })
+            continue
+        if not record or not record.get("is_live") or not record.get("updated_at"):
+            entries.append({
+                "symbol": market.value,
+                "status": "unavailable_or_fallback",
+                "is_live": False,
+                "source": (record or {}).get("price_source", "Live market data unavailable; demo fallback only"),
+                "updated_at": (record or {}).get("updated_at"),
+                "age_seconds": None,
+                "executable_sar_quote": False,
+            })
+            continue
+        try:
+            observed_at = datetime.fromisoformat(record["updated_at"].replace("Z", "+00:00"))
+            if observed_at.tzinfo is None:
+                observed_at = observed_at.replace(tzinfo=timezone.utc)
+            age_seconds = max(0, int((now - observed_at.astimezone(timezone.utc)).total_seconds()))
+        except (TypeError, ValueError):
+            entries.append({
+                "symbol": market.value,
+                "status": "invalid_timestamp",
+                "is_live": False,
+                "source": record.get("price_source", "Unknown source"),
+                "updated_at": record.get("updated_at"),
+                "age_seconds": None,
+                "executable_sar_quote": False,
+            })
+            continue
+        fresh = age_seconds <= 60
+        entries.append({
+            "symbol": market.value,
+            "status": "live_reference_fresh" if fresh else "stale",
+            "is_live": bool(fresh),
+            "source": record.get("price_source", "Unknown source"),
+            "updated_at": record.get("updated_at"),
+            "age_seconds": age_seconds,
+            "executable_sar_quote": False,
+        })
+    return {
+        "mode": "read_only_market_data_status",
+        "trading_mode": "simulation_only",
+        "real_orders_enabled": False,
+        "money_movement_enabled": False,
+        "freshness_threshold_seconds": 60,
+        "note": "Live means a public reference ticker was received recently; SAR conversion is indicative and not an executable SAR order-book quote.",
+        "markets": entries,
+    }
+
+
 @app.get("/balances")
 def get_balances():
     if _postgres_enabled():
