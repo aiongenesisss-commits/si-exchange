@@ -56,3 +56,12 @@ def test_market_data_status_fails_closed_when_feed_unavailable(monkeypatch):
     assert markets["BTC/SAR"]["is_live"] is False
     assert markets["AION/SAR"]["status"] == "simulated_unverified"
     assert all(item["executable_sar_quote"] is False for item in markets.values())
+
+
+def test_dashboard_exposes_market_data_status_panel():
+    with TestClient(main.app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="marketDataStatus"' in response.text
+    assert "refreshMarketStatus()" in response.text
