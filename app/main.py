@@ -366,25 +366,7 @@ async def enforce_demo_account_scope(request: Request, call_next):
         headers.append((b"idempotency-key", scoped_key))
         request.scope["headers"] = headers
 
-    # Never trust the account field in a request body; overwrite it with server-side mapping.
-    if request.method == "POST" and path == "/orders":
-        try:
-            body = await request.body()
-            payload = json.loads(body or b"{}")
-            payload["account"] = account
-            body = json.dumps(payload).encode()
-            sent = False
-            async def receive():
-                nonlocal sent
-                if not sent:
-                    sent = True
-                    return {"type": "http.request", "body": body, "more_body": False}
-                return {"type": "http.request", "body": b"", "more_body": False}
-            request._receive = receive
-        except (ValueError, TypeError):
-            return JSONResponse(status_code=400, content={"detail": "Invalid order request body"})
-
-    request.state.demo_account = account
+        request.state.demo_account = account
     response = await call_next(request)
     if response.status_code >= 400:
         return response
@@ -497,10 +479,14 @@ def get_orders():
         return list(orders)
 
 @app.post("/orders", response_model=Order, status_code=201)
-def place_order(request: OrderRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+def place_order(order_request: OrderRequest, http_request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    # Identity-to-account mapping is established by verified middleware, never by request JSON.
+    scoped_account = getattr(http_request.state, "demo_account", None)
+    if scoped_account:
+        order_request.account = Account(scoped_account)
     if _postgres_enabled():
         try:
-            result = postgres_store.place_order(request, idempotency_key)
+            result = postgres_store.place_order(order_request, idempotency_key)
             if result.get("error") == "idempotency_conflict":
                 raise HTTPException(status_code=409, detail="Idempotency-Key already used with a different request")
             if result.get("error") == "insufficient_funds":
@@ -511,8 +497,8 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
         except Exception:
             raise HTTPException(status_code=503, detail="PostgreSQL order transaction failed")
     now = datetime.now(timezone.utc)
-    fingerprint = json.dumps(request.model_dump(mode="json"), sort_keys=True)
-    order = Order(id=str(uuid4()),market=request.market,side=request.side,account=request.account,price=request.price,quantity=request.quantity,remaining_quantity=request.quantity,status="open",created_at=now)
+    fingerprint = json.dumps(order_request.model_dump(mode="json"), sort_keys=True)
+    order = Order(id=str(uuid4()),market=order_request.market,side=order_request.side,account=order_request.account,price=order_request.price,quantity=order_request.quantity,remaining_quantity=order_request.quantity,status="open",created_at=now)
     with lock:
         if idempotency_key:
             if len(idempotency_key) > 200:
