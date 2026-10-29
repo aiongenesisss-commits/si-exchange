@@ -380,7 +380,7 @@ async def enforce_demo_account_scope(request: Request, call_next):
             return JSONResponse(status_code=response.status_code, content=data)
         except Exception:
             return JSONResponse(status_code=500, content={"detail": "Unable to scope order response"})
-    if path in {"/balances", "/available-balances", "/orders", "/ledger", "/audit"}:
+    if path in {"/balances", "/available-balances", "/orders", "/ledger", "/audit"} and not (path == "/orders" and request.method != "GET"):
         try:
             chunks = [chunk async for chunk in response.body_iterator]
             data = json.loads(b"".join(chunks))
