@@ -335,7 +335,8 @@ def get_markets():
     live = get_live_prices_sar()
     result = []
     for market, fallback_price in prices.items():
-        record = (live or {}).get(market.value)
+        # AION is not a verified on-chain token; never accept a live quote for it.
+        record = None if market == Market.AION_SAR else (live or {}).get(market.value)
         if record:
             result.append({
                 "symbol": market.value,
