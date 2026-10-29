@@ -445,6 +445,13 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
             available = balances[order.account][base_asset] - _reserved_amount(order.account, base_asset)
             if available + 1e-12 < order.quantity:
                 raise HTTPException(status_code=409, detail=f"Insufficient available demo {base_asset} after open-order reservations")
+        # Snapshot mutable demo state before matching so a failed Redis write can roll back.
+        redis_persistence_enabled = _redis_enabled()
+        balances_snapshot = {account: assets.copy() for account, assets in balances.items()} if redis_persistence_enabled else None
+        orders_snapshot = [Order.model_validate(item.model_dump()) for item in orders] if redis_persistence_enabled else None
+        ledger_snapshot = [Fill.model_validate(item.model_dump()) for item in ledger] if redis_persistence_enabled else None
+        idempotency_snapshot = idempotency_keys.copy() if redis_persistence_enabled else None
+
         matches=[o for o in orders if o.market==order.market and o.side!=order.side and o.account!=order.account and o.status in ("open","partially_filled") and (o.price<=order.price if order.side==Side.BUY else o.price>=order.price)]
         matches.sort(key=lambda o:(o.price if order.side==Side.BUY else -o.price,o.created_at))
         for resting in matches:
@@ -468,12 +475,19 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
         orders.append(order)
         if idempotency_key:
             idempotency_keys[idempotency_key] = (fingerprint, order.id)
-        if _redis_enabled():
+        if redis_persistence_enabled:
             try:
                 _persist_redis_state()
             except Exception:
-                # Fail the request rather than claim a saved order if persistence fails.
-                raise HTTPException(status_code=503, detail="Redis persistence failed; order state requires reconciliation")
+                # Restore all in-memory mutations: a failed persistence must not leave an
+                # order/fill/balance change that a retry could accidentally execute again.
+                balances.clear()
+                balances.update(balances_snapshot)
+                orders[:] = orders_snapshot
+                ledger[:] = ledger_snapshot
+                idempotency_keys.clear()
+                idempotency_keys.update(idempotency_snapshot)
+                raise HTTPException(status_code=503, detail="Redis persistence failed; no order was committed")
     return order
 
 @app.get("/audit")
