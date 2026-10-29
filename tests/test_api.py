@@ -89,7 +89,16 @@ def test_missing_order_returns_404():
     assert client.get("/orders/not-real").status_code == 404
 
 
-def test_aion_sar_is_simulation_only_and_trades_only_demo_balances():
+def test_aion_sar_is_simulation_only_and_trades_only_demo_balances(monkeypatch):
+    # Even if a future/upstream price adapter accidentally includes AION, it must stay simulated.
+    monkeypatch.setattr("app.main.get_live_prices_sar", lambda: {
+        "AION/SAR": {
+            "price_sar": 9999.0,
+            "is_live": True,
+            "price_source": "injected live quote must be ignored for unverified AION",
+            "updated_at": "2026-10-29T00:00:00+00:00",
+        }
+    })
     markets = {item["symbol"]: item for item in client.get("/markets").json()}
     aion_market = markets["AION/SAR"]
     assert aion_market["is_live"] is False
@@ -98,6 +107,7 @@ def test_aion_sar_is_simulation_only_and_trades_only_demo_balances():
     assert "no verified deployment" in aion_market["price_source"]
     assert client.get("/api").json()["live_trading"] is False
 
+    before = client.get("/balances").json()["balances"]
     sell = client.post("/orders", json={"market":"AION/SAR","side":"sell","account":"A","price":0.10,"quantity":10})
     buy = client.post("/orders", json={"market":"AION/SAR","side":"buy","account":"B","price":0.10,"quantity":10})
     assert sell.status_code == 201 and buy.status_code == 201
@@ -108,6 +118,10 @@ def test_aion_sar_is_simulation_only_and_trades_only_demo_balances():
     after = client.get("/balances").json()["balances"]
     assert after["A"]["AION"] == 99990
     assert after["B"]["AION"] == 100010
+    for account in ("A", "B"):
+        for asset, value in before[account].items():
+            if asset not in ("AION", "SAR"):
+                assert after[account][asset] == value
     assert client.get("/audit").json()["valid"] is True
 
 
