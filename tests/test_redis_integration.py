@@ -1,7 +1,5 @@
 """Real Redis integration tests, enabled only when REDIS_URL points to an isolated test service."""
-import json
 import os
-from uuid import uuid4
 
 import pytest
 
@@ -15,7 +13,7 @@ def test_real_redis_round_trip_survives_new_client(monkeypatch):
     monkeypatch.setenv("REDIS_URL", REDIS_URL)
     client = redis_store._client()
     redis_store.check_connection()
-    key = f"{redis_store.STATE_KEY}:ci:{uuid4()}"
+    client.delete(redis_store.STATE_KEY)
     state = {
         "balances": {"A": {"SAR": 100000.0}, "B": {"SAR": 100000.0}},
         "orders": [{"id": "demo-order", "status": "open"}],
@@ -23,24 +21,23 @@ def test_real_redis_round_trip_survives_new_client(monkeypatch):
         "idempotency_keys": {"demo-key": {"fingerprint": "test", "order_id": "demo-order"}},
     }
     try:
-        payload = json.dumps(state, separators=(",", ":"), allow_nan=False)
-        client.set(key, payload)
+        redis_store.save_state(state)
         # A newly constructed client models reconnect/application restart.
-        restarted_client = redis_store._client()
-        assert json.loads(restarted_client.get(key)) == state
+        monkeypatch.setattr(redis_store, "_client", lambda: redis_store.redis.Redis.from_url(
+            REDIS_URL, decode_responses=True, socket_connect_timeout=3, socket_timeout=3
+        ))
+        assert redis_store.load_state() == state
     finally:
-        client.delete(key)
+        client.delete(redis_store.STATE_KEY)
 
 
 def test_real_redis_rejects_incomplete_state(monkeypatch):
     monkeypatch.setenv("REDIS_URL", REDIS_URL)
     client = redis_store._client()
-    key = f"{redis_store.STATE_KEY}:ci:incomplete:{uuid4()}"
+    client.delete(redis_store.STATE_KEY)
     try:
-        client.set(key, '{"balances": {}}')
-        raw = client.get(key)
-        state = json.loads(raw)
-        required = {"balances", "orders", "ledger", "idempotency_keys"}
-        assert not required.issubset(state)
+        client.set(redis_store.STATE_KEY, '{"balances": {}}')
+        with pytest.raises(RuntimeError, match="missing required fields"):
+            redis_store.load_state()
     finally:
-        client.delete(key)
+        client.delete(redis_store.STATE_KEY)
