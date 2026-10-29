@@ -1,11 +1,12 @@
 from fastapi.testclient import TestClient
-from app.main import app, orders, ledger, balances, INITIAL_ASSETS
+from app.main import app, orders, ledger, balances, idempotency_keys, INITIAL_ASSETS
 
 client = TestClient(app)
 
 def setup_function():
     orders.clear()
     ledger.clear()
+    idempotency_keys.clear()
     balances.clear()
     balances.update({
         "A": {"SAR": 100000.0, **INITIAL_ASSETS.copy()},
@@ -87,6 +88,49 @@ def test_rejects_non_positive_price_and_quantity():
 
 def test_missing_order_returns_404():
     assert client.get("/orders/not-real").status_code == 404
+
+
+def test_idempotency_key_replay_returns_same_order_and_does_not_duplicate_state():
+    payload = {"market":"AION/SAR","side":"sell","account":"A","price":0.10,"quantity":10}
+    first = client.post("/orders", json=payload, headers={"Idempotency-Key":"aion-demo-order-001"})
+    replay = client.post("/orders", json=payload, headers={"Idempotency-Key":"aion-demo-order-001"})
+    assert first.status_code == replay.status_code == 201
+    assert first.json()["id"] == replay.json()["id"]
+    assert len(client.get("/orders").json()) == 1
+    assert client.get("/audit").json()["valid"] is True
+
+
+def test_idempotency_key_reuse_with_different_payload_is_rejected():
+    headers = {"Idempotency-Key":"aion-demo-order-conflict"}
+    first = client.post("/orders", json={"market":"AION/SAR","side":"sell","account":"A","price":0.10,"quantity":10}, headers=headers)
+    second = client.post("/orders", json={"market":"AION/SAR","side":"sell","account":"A","price":0.10,"quantity":11}, headers=headers)
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert len(client.get("/orders").json()) == 1
+
+
+def test_redis_persistence_failure_rolls_back_order_fill_and_balance_mutations(monkeypatch):
+    import app.main as main
+
+    before = client.get("/balances").json()["balances"]
+    monkeypatch.setattr(main, "_redis_enabled", lambda: True)
+    monkeypatch.setattr(main, "_persist_redis_state", lambda: (_ for _ in ()).throw(RuntimeError("simulated Redis outage")))
+    sell = client.post("/orders", json={"market":"AION/SAR","side":"sell","account":"A","price":0.10,"quantity":10})
+    assert sell.status_code == 503
+    assert client.get("/orders").json() == []
+    assert client.get("/ledger").json() == []
+    assert client.get("/balances").json()["balances"] == before
+    assert client.get("/audit").json()["valid"] is True
+
+
+def test_managed_host_private_apis_remain_locked_until_authentication_exists(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main, "_is_managed_deployment", lambda: True)
+    assert client.get("/balances").status_code == 503
+    assert client.get("/orders").status_code == 503
+    assert client.get("/ledger").status_code == 503
+    assert client.get("/audit").status_code == 503
 
 
 def test_aion_sar_is_simulation_only_and_trades_only_demo_balances(monkeypatch):
