@@ -395,7 +395,7 @@ async def enforce_demo_account_scope(request: Request, call_next):
             data = json.loads(b"".join(chunks))
             if data.get("account") != account:
                 return JSONResponse(status_code=404, content={"detail": "Order not found"})
-            return JSONResponse(status_code=response.status_code, content=data, headers=dict(response.headers))
+            return JSONResponse(status_code=response.status_code, content=data)
         except Exception:
             return JSONResponse(status_code=500, content={"detail": "Unable to scope order response"})
     if path in {"/balances", "/available-balances", "/orders", "/ledger", "/audit"}:
