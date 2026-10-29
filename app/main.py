@@ -330,6 +330,96 @@ def production_readiness():
     }
 
 
+# Authenticated per-user scoping for local/staging environments.
+# Managed deployments remain locked by lock_private_demo_apis_until_auth until separately reviewed.
+@app.middleware("http")
+async def enforce_demo_account_scope(request: Request, call_next):
+    from starlette.responses import JSONResponse, Response
+    from app.auth import AuthenticationError, account_for_subject, verify_access_token
+
+    path = request.url.path
+    private = path in _PRIVATE_API_PATHS or path.startswith("/orders/")
+    if not private:
+        return await call_next(request)
+    if _is_managed_deployment():
+        return JSONResponse(status_code=503, content={
+            "detail": "Private demo APIs remain locked on managed hosting pending security review.",
+            "code": "private_api_locked", "simulation_only": True,
+        })
+    if os.getenv("AION_AUTH_REQUIRED", "").strip().lower() != "true":
+        return await call_next(request)
+
+    authorization = request.headers.get("authorization", "")
+    if not authorization.startswith("Bearer ") or not authorization[7:].strip():
+        return JSONResponse(status_code=401, content={"detail": "Bearer token required"})
+    try:
+        claims = verify_access_token(authorization[7:].strip())
+        account = account_for_subject(claims["sub"])
+    except (AuthenticationError, KeyError):
+        return JSONResponse(status_code=401, content={"detail": "Invalid or unauthorized bearer token"})
+
+    # Make idempotency keys unique per verified account, not across tenants.
+    if request.headers.get("Idempotency-Key"):
+        headers = list(request.scope.get("headers", []))
+        headers = [(k, v) for k, v in headers if k.lower() != b"idempotency-key"]
+        scoped_key = f"{account}:{request.headers['Idempotency-Key']}".encode()
+        headers.append((b"idempotency-key", scoped_key))
+        request.scope["headers"] = headers
+
+    # Never trust the account field in a request body; overwrite it with server-side mapping.
+    if request.method == "POST" and path == "/orders":
+        try:
+            body = await request.body()
+            payload = json.loads(body or b"{}")
+            payload["account"] = account
+            body = json.dumps(payload).encode()
+            sent = False
+            async def receive():
+                nonlocal sent
+                if not sent:
+                    sent = True
+                    return {"type": "http.request", "body": body, "more_body": False}
+                return {"type": "http.request", "body": b"", "more_body": False}
+            request = Request(request.scope, receive=receive)
+        except (ValueError, TypeError):
+            return JSONResponse(status_code=400, content={"detail": "Invalid order request body"})
+
+    request.state.demo_account = account
+    response = await call_next(request)
+    if response.status_code >= 400:
+        return response
+    if path == "/orders/" or path.startswith("/orders/"):
+        # Order detail must never disclose another account's order.
+        try:
+            chunks = [chunk async for chunk in response.body_iterator]
+            data = json.loads(b"".join(chunks))
+            if data.get("account") != account:
+                return JSONResponse(status_code=404, content={"detail": "Order not found"})
+            return JSONResponse(status_code=response.status_code, content=data, headers=dict(response.headers))
+        except Exception:
+            return JSONResponse(status_code=500, content={"detail": "Unable to scope order response"})
+    if path in {"/balances", "/available-balances", "/orders", "/ledger", "/audit"}:
+        try:
+            chunks = [chunk async for chunk in response.body_iterator]
+            data = json.loads(b"".join(chunks))
+            if path == "/balances":
+                data["balances"] = {account: data.get("balances", {}).get(account, {})}
+            elif path == "/available-balances":
+                data["available_balances"] = {account: data.get("available_balances", {}).get(account, {})}
+            elif path == "/orders":
+                data = [item for item in data if item.get("account") == account]
+            elif path == "/ledger":
+                data = [item for item in data if account in (item.get("buyer_account"), item.get("seller_account"))]
+            elif path == "/audit":
+                # Global audit issue details can contain other users' data; expose only status/counts.
+                data = {"mode": data.get("mode", "simulation_only"), "valid": data.get("valid", False),
+                        "orders_checked": None, "fills_checked": None, "issues": []}
+            return JSONResponse(status_code=response.status_code, content=data)
+        except Exception:
+            return JSONResponse(status_code=500, content={"detail": "Unable to scope private response"})
+    return response
+
+
 @app.get("/markets")
 def get_markets():
     live = get_live_prices_sar()
