@@ -358,6 +358,11 @@ async def enforce_demo_account_scope(request: Request, call_next):
     except (AuthenticationError, KeyError):
         return JSONResponse(status_code=401, content={"detail": "Invalid or unauthorized bearer token"})
 
+    # Pass verified identity to the route through a header overwritten in the trusted middleware.
+    verified_headers = [(k, v) for k, v in request.scope.get("headers", []) if k.lower() != b"x-aion-verified-account"]
+    verified_headers.append((b"x-aion-verified-account", account.encode()))
+    request.scope["headers"] = verified_headers
+
     # Make idempotency keys unique per verified account, not across tenants.
     if request.headers.get("Idempotency-Key"):
         headers = list(request.scope.get("headers", []))
@@ -481,8 +486,8 @@ def get_orders():
 @app.post("/orders", response_model=Order, status_code=201)
 def place_order(order_request: OrderRequest, http_request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     # Identity-to-account mapping is established by verified middleware, never by request JSON.
-    scoped_account = getattr(http_request.state, "demo_account", None)
-    if scoped_account:
+    scoped_account = http_request.headers.get("x-aion-verified-account")
+    if os.getenv("AION_AUTH_REQUIRED", "").strip().lower() == "true" and scoped_account in ("A", "B"):
         order_request.account = Account(scoped_account)
     if _postgres_enabled():
         try:
