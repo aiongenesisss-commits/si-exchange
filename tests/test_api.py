@@ -168,3 +168,15 @@ def test_browser_only_demo_is_available_without_private_api_calls():
     assert "AION/SAR" in page.text
     assert "لا توجد اتصالات بخادم" in page.text
     assert "fetch(" not in page.text
+
+
+def test_browser_demo_has_no_browser_network_or_persistent_storage_apis():
+    page = client.get("/demo")
+    assert page.status_code == 200
+    # This is intentionally a static boundary check; the demo must remain browser-local.
+    forbidden = (
+        "fetch(", "XMLHttpRequest", "WebSocket(", "EventSource(",
+        "navigator.sendBeacon", "localStorage", "sessionStorage", "indexedDB",
+    )
+    for token in forbidden:
+        assert token not in page.text, f"Unexpected browser API in demo: {token}"
