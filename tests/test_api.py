@@ -159,3 +159,12 @@ def test_dashboard_includes_aion_network_status_panel():
     assert page.status_code == 200
     assert 'id="networkStatus"' in page.text
     assert "حالة شبكات AION" in page.text
+
+
+def test_browser_only_demo_is_available_without_private_api_calls():
+    page = client.get("/demo")
+    assert page.status_code == 200
+    assert 'id="market"' in page.text
+    assert "AION/SAR" in page.text
+    assert "لا توجد اتصالات بخادم" in page.text
+    assert "fetch(" not in page.text
