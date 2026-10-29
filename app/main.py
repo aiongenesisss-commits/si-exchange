@@ -380,7 +380,7 @@ async def enforce_demo_account_scope(request: Request, call_next):
                     sent = True
                     return {"type": "http.request", "body": body, "more_body": False}
                 return {"type": "http.request", "body": b"", "more_body": False}
-            request = Request(request.scope, receive=receive)
+            request._receive = receive
         except (ValueError, TypeError):
             return JSONResponse(status_code=400, content={"detail": "Invalid order request body"})
 
