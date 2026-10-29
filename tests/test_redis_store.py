@@ -104,6 +104,7 @@ def test_real_redis_connection_and_round_trip_when_configured(monkeypatch):
         socket_timeout=3,
     )
     application_state_key = redis_store.STATE_KEY
+    application_state_before = client.get(application_state_key)
     test_key = _new_test_key()
     assert test_key != application_state_key
     # Route store operations to this run's random key, never to the app key.
@@ -118,7 +119,7 @@ def test_real_redis_connection_and_round_trip_when_configured(monkeypatch):
         redis_store.check_connection()
         redis_store.save_state(state)
         assert redis_store.load_state() == state
-        assert client.get(application_state_key) is None or test_key != application_state_key
+        assert client.get(application_state_key) == application_state_before
     finally:
         _safe_delete_test_key(client, test_key, application_state_key)
         client.close()
