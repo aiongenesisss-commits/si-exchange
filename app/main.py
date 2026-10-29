@@ -330,12 +330,90 @@ def production_readiness():
     }
 
 
+# Authenticated per-user scoping for local/staging environments.
+# Managed deployments remain locked by lock_private_demo_apis_until_auth until separately reviewed.
+@app.middleware("http")
+async def enforce_demo_account_scope(request: Request, call_next):
+    from starlette.responses import JSONResponse, Response
+    from app.auth import AuthenticationError, account_for_subject, verify_access_token
+
+    path = request.url.path
+    private = path in _PRIVATE_API_PATHS or path.startswith("/orders/")
+    if not private:
+        return await call_next(request)
+    if _is_managed_deployment():
+        return JSONResponse(status_code=503, content={
+            "detail": "Private demo APIs remain locked on managed hosting pending security review.",
+            "code": "private_api_locked", "simulation_only": True,
+        })
+    if os.getenv("AION_AUTH_REQUIRED", "").strip().lower() != "true":
+        return await call_next(request)
+
+    authorization = request.headers.get("authorization", "")
+    if not authorization.startswith("Bearer ") or not authorization[7:].strip():
+        return JSONResponse(status_code=401, content={"detail": "Bearer token required"})
+    try:
+        claims = verify_access_token(authorization[7:].strip())
+        account = account_for_subject(claims["sub"])
+    except (AuthenticationError, KeyError):
+        return JSONResponse(status_code=401, content={"detail": "Invalid or unauthorized bearer token"})
+
+    # Pass verified identity to the route through a header overwritten in the trusted middleware.
+    verified_headers = [(k, v) for k, v in request.scope.get("headers", []) if k.lower() != b"x-aion-verified-account"]
+    verified_headers.append((b"x-aion-verified-account", account.encode()))
+    request.scope["headers"] = verified_headers
+
+    # Make idempotency keys unique per verified account, not across tenants.
+    if request.headers.get("Idempotency-Key"):
+        headers = list(request.scope.get("headers", []))
+        headers = [(k, v) for k, v in headers if k.lower() != b"idempotency-key"]
+        scoped_key = f"{account}:{request.headers['Idempotency-Key']}".encode()
+        headers.append((b"idempotency-key", scoped_key))
+        request.scope["headers"] = headers
+
+        request.state.demo_account = account
+    response = await call_next(request)
+    if response.status_code >= 400:
+        return response
+    if path == "/orders/" or path.startswith("/orders/"):
+        # Order detail must never disclose another account's order.
+        try:
+            chunks = [chunk async for chunk in response.body_iterator]
+            data = json.loads(b"".join(chunks))
+            if data.get("account") != account:
+                return JSONResponse(status_code=404, content={"detail": "Order not found"})
+            return JSONResponse(status_code=response.status_code, content=data)
+        except Exception:
+            return JSONResponse(status_code=500, content={"detail": "Unable to scope order response"})
+    if path in {"/balances", "/available-balances", "/orders", "/ledger", "/audit"} and not (path == "/orders" and request.method != "GET"):
+        try:
+            chunks = [chunk async for chunk in response.body_iterator]
+            data = json.loads(b"".join(chunks))
+            if path == "/balances":
+                data["balances"] = {account: data.get("balances", {}).get(account, {})}
+            elif path == "/available-balances":
+                data["available_balances"] = {account: data.get("available_balances", {}).get(account, {})}
+            elif path == "/orders":
+                data = [item for item in data if item.get("account") == account]
+            elif path == "/ledger":
+                data = [item for item in data if account in (item.get("buyer_account"), item.get("seller_account"))]
+            elif path == "/audit":
+                # Global audit issue details can contain other users' data; expose only status/counts.
+                data = {"mode": data.get("mode", "simulation_only"), "valid": data.get("valid", False),
+                        "orders_checked": None, "fills_checked": None, "issues": []}
+            return JSONResponse(status_code=response.status_code, content=data)
+        except Exception:
+            return JSONResponse(status_code=500, content={"detail": "Unable to scope private response"})
+    return response
+
+
 @app.get("/markets")
 def get_markets():
     live = get_live_prices_sar()
     result = []
     for market, fallback_price in prices.items():
-        record = (live or {}).get(market.value)
+        # AION is not a verified on-chain token; never accept a live quote for it.
+        record = None if market == Market.AION_SAR else (live or {}).get(market.value)
         if record:
             result.append({
                 "symbol": market.value,
@@ -406,10 +484,14 @@ def get_orders():
         return list(orders)
 
 @app.post("/orders", response_model=Order, status_code=201)
-def place_order(request: OrderRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+def place_order(order_request: OrderRequest, http_request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    # Identity-to-account mapping is established by verified middleware, never by request JSON.
+    scoped_account = http_request.headers.get("x-aion-verified-account")
+    if os.getenv("AION_AUTH_REQUIRED", "").strip().lower() == "true" and scoped_account in ("A", "B"):
+        order_request.account = Account(scoped_account)
     if _postgres_enabled():
         try:
-            result = postgres_store.place_order(request, idempotency_key)
+            result = postgres_store.place_order(order_request, idempotency_key)
             if result.get("error") == "idempotency_conflict":
                 raise HTTPException(status_code=409, detail="Idempotency-Key already used with a different request")
             if result.get("error") == "insufficient_funds":
@@ -420,8 +502,8 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
         except Exception:
             raise HTTPException(status_code=503, detail="PostgreSQL order transaction failed")
     now = datetime.now(timezone.utc)
-    fingerprint = json.dumps(request.model_dump(mode="json"), sort_keys=True)
-    order = Order(id=str(uuid4()),market=request.market,side=request.side,account=request.account,price=request.price,quantity=request.quantity,remaining_quantity=request.quantity,status="open",created_at=now)
+    fingerprint = json.dumps(order_request.model_dump(mode="json"), sort_keys=True)
+    order = Order(id=str(uuid4()),market=order_request.market,side=order_request.side,account=order_request.account,price=order_request.price,quantity=order_request.quantity,remaining_quantity=order_request.quantity,status="open",created_at=now)
     with lock:
         if idempotency_key:
             if len(idempotency_key) > 200:
@@ -444,6 +526,13 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
             available = balances[order.account][base_asset] - _reserved_amount(order.account, base_asset)
             if available + 1e-12 < order.quantity:
                 raise HTTPException(status_code=409, detail=f"Insufficient available demo {base_asset} after open-order reservations")
+        # Snapshot mutable demo state before matching so a failed Redis write can roll back.
+        redis_persistence_enabled = _redis_enabled()
+        balances_snapshot = {account: assets.copy() for account, assets in balances.items()} if redis_persistence_enabled else None
+        orders_snapshot = [Order.model_validate(item.model_dump()) for item in orders] if redis_persistence_enabled else None
+        ledger_snapshot = [Fill.model_validate(item.model_dump()) for item in ledger] if redis_persistence_enabled else None
+        idempotency_snapshot = idempotency_keys.copy() if redis_persistence_enabled else None
+
         matches=[o for o in orders if o.market==order.market and o.side!=order.side and o.account!=order.account and o.status in ("open","partially_filled") and (o.price<=order.price if order.side==Side.BUY else o.price>=order.price)]
         matches.sort(key=lambda o:(o.price if order.side==Side.BUY else -o.price,o.created_at))
         for resting in matches:
@@ -467,12 +556,19 @@ def place_order(request: OrderRequest, idempotency_key: str | None = Header(defa
         orders.append(order)
         if idempotency_key:
             idempotency_keys[idempotency_key] = (fingerprint, order.id)
-        if _redis_enabled():
+        if redis_persistence_enabled:
             try:
                 _persist_redis_state()
             except Exception:
-                # Fail the request rather than claim a saved order if persistence fails.
-                raise HTTPException(status_code=503, detail="Redis persistence failed; order state requires reconciliation")
+                # Restore all in-memory mutations: a failed persistence must not leave an
+                # order/fill/balance change that a retry could accidentally execute again.
+                balances.clear()
+                balances.update(balances_snapshot)
+                orders[:] = orders_snapshot
+                ledger[:] = ledger_snapshot
+                idempotency_keys.clear()
+                idempotency_keys.update(idempotency_snapshot)
+                raise HTTPException(status_code=503, detail="Redis persistence failed; no order was committed")
     return order
 
 @app.get("/audit")
