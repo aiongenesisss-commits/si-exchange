@@ -84,6 +84,42 @@ jobs:
               json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
           )
           PY
+      - name: Validate candidate evidence
+        id: validate_candidate_evidence
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.test_suite.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          path = Path("release-evidence.json")
+          if not path.is_file():
+              raise SystemExit("Release evidence missing; candidate is blocked")
+          evidence = json.loads(path.read_text(encoding="utf-8"))
+          required = {
+              "schema", "candidate_sha", "workflow", "run_id", "run_attempt",
+              "test_suite_outcome", "release_gate", "database_services", "mode",
+              "production_deployment_verified"
+          }
+          missing = sorted(required - evidence.keys())
+          if missing:
+              raise SystemExit(f"Release evidence fields missing: {missing}")
+          if evidence["schema"] != "aion.si-exchange.release-evidence.v1":
+              raise SystemExit("Unsupported release evidence schema")
+          if evidence["candidate_sha"] != os.environ["GITHUB_SHA"]:
+              raise SystemExit("Evidence SHA does not match the checked-out candidate")
+          if evidence["run_id"] != os.environ["GITHUB_RUN_ID"]:
+              raise SystemExit("Evidence run ID does not match this workflow run")
+          if evidence["test_suite_outcome"] != "success" or os.environ.get("TEST_OUTCOME") != "success":
+              raise SystemExit("Test suite did not pass; candidate is blocked")
+          if evidence["release_gate"] != "pass":
+              raise SystemExit("Evidence does not mark the CI gate as passed")
+          if evidence["production_deployment_verified"] is not False:
+              raise SystemExit("CI evidence must not claim production deployment verification")
+          print("CI evidence valid for exact candidate SHA; production deployment remains unverified.")
+          PY
       - name: Upload release evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -92,12 +128,18 @@ jobs:
           path: release-evidence.json
           if-no-files-found: error
           retention-days: 90
-      - name: Enforce release gate
+      - name: Enforce CI evidence gate
         if: always()
         env:
           TEST_OUTCOME: ${{ steps.test_suite.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.validate_candidate_evidence.outcome }}
         run: |
           test "$TEST_OUTCOME" = "success" || {
-            echo "Release gate failed: full suite did not pass."
+            echo "CI evidence gate failed: full suite did not pass."
             exit 1
           }
+          test "$EVIDENCE_OUTCOME" = "success" || {
+            echo "CI evidence gate failed: evidence missing, invalid, or mismatched."
+            exit 1
+          }
+          echo "CI evidence gate passed. This is not proof of production deployment or persistence."
