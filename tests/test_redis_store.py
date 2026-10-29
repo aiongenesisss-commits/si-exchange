@@ -3,6 +3,7 @@ import os
 import uuid
 
 import pytest
+from urllib.parse import urlparse
 
 from app import redis_store
 
@@ -97,6 +98,12 @@ def test_real_redis_connection_and_round_trip_when_configured(monkeypatch):
     if not test_url:
         pytest.skip("TEST_REDIS_URL is not configured; no live Redis test attempted")
 
+    parsed_url = urlparse(test_url)
+    if parsed_url.hostname not in {"localhost", "127.0.0.1", "::1"} or parsed_url.path != "/15":
+        raise AssertionError(
+            "Refusing live Redis test: TEST_REDIS_URL must target loopback host and database /15"
+        )
+
     client = redis_store.redis.Redis.from_url(
         test_url,
         decode_responses=True,
@@ -109,6 +116,7 @@ def test_real_redis_connection_and_round_trip_when_configured(monkeypatch):
     assert test_key != application_state_key
     # Route store operations to this run's random key, never to the app key.
     monkeypatch.setattr(redis_store, "STATE_KEY", test_key)
+    monkeypatch.setattr(redis_store, "_client", lambda: client)
     state = {
         "balances": {"TEST-A": {"SAR": 123.45}},
         "orders": [{"id": f"redis-integration-{uuid.uuid4().hex}", "status": "open"}],
