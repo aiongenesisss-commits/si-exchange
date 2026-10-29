@@ -545,3 +545,11 @@ def get_order(order_id: str):
         for order in orders:
             if order.id==order_id: return order
     raise HTTPException(status_code=404,detail="Order not found")
+
+
+from app.demo_ui import DEMO_PAGE
+
+@app.get("/demo", response_class=HTMLResponse)
+def browser_only_demo():
+    """Serve an isolated client-only simulation; it does not use server state."""
+    return HTMLResponse(content=DEMO_PAGE)
