@@ -24,7 +24,16 @@ jobs:
           import urllib.request
 
           base = os.environ["BASE_URL"].rstrip("/")
-          paths = ["/health", "/ready", "/online-manifest", "/markets", "/balances", "/audit", "/api"]
+          paths = [
+              "/health",
+              "/ready",
+              "/online-manifest",
+              "/markets",
+              "/networks",
+              "/production-readiness",
+              "/api",
+          ]
+          payloads = {}
           for path in paths:
               request = urllib.request.Request(
                   base + path,
@@ -35,17 +44,30 @@ jobs:
                   if response.status != 200:
                       raise SystemExit(f"FAIL {path}: HTTP {response.status}")
                   print(f"PASS {path}: HTTP {response.status}, {len(body)} bytes")
-                  if path == "/api":
-                      payload = json.loads(body)
-                      expected = {
-                          "live_trading": False,
-                          "deposits_enabled": False,
-                          "withdrawals_enabled": False,
-                      }
-                      for key, value in expected.items():
-                          if payload.get(key) is not value:
-                              raise SystemExit(f"FAIL /api: expected {key}={value}, got {payload.get(key)!r}")
-                      if payload.get("mode") != "simulation_only":
-                          raise SystemExit("FAIL /api: mode is not simulation_only")
-                      print("PASS /api safety flags: simulation-only; deposits/withdrawals/live trading disabled")
+                  if path in {"/api", "/networks", "/production-readiness"}:
+                      payloads[path] = json.loads(body)
+
+          api = payloads["/api"]
+          expected = {
+              "live_trading": False,
+              "deposits_enabled": False,
+              "withdrawals_enabled": False,
+              "custody_enabled": False,
+          }
+          for key, value in expected.items():
+              if api.get(key) is not value:
+                  raise SystemExit(f"FAIL /api: expected {key}={value}, got {api.get(key)!r}")
+          if api.get("mode") != "simulation_only":
+              raise SystemExit("FAIL /api: mode is not simulation_only")
+          print("PASS /api safety flags: simulation-only; custody, deposits, withdrawals and live trading disabled")
+
+          networks = payloads["/networks"]
+          if networks.get("mode") != "read_only_registry" or networks.get("real_money_enabled") is not False:
+              raise SystemExit("FAIL /networks: unexpected public registry safety contract")
+          print("PASS /networks: read-only registry; real-money features disabled")
+
+          readiness = payloads["/production-readiness"]
+          if readiness.get("status") != "not_production_ready":
+              raise SystemExit("FAIL /production-readiness: service must not claim production readiness")
+          print("PASS /production-readiness: production readiness is not claimed")
           PY
