@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -42,8 +43,12 @@ def test_github_actions_health_monitors_probe_public_routes_only():
         REPO_ROOT / ".github" / "workflows" / "public-service-health.yml",
         REPO_ROOT / ".github" / "workflows" / "online-smoke.yml",
     )
-    private_route_tokens = ("/balances", "/available-balances", "/orders", "/ledger", "/audit")
+    # The production container intentionally excludes GitHub metadata/workflows.
+    # The repository CI job runs this contract test against the full checkout.
+    if not all(path.is_file() for path in workflow_paths):
+        pytest.skip("GitHub workflow definitions are not included in the runtime image")
 
+    private_route_tokens = ("/balances", "/available-balances", "/orders", "/ledger", "/audit")
     for workflow_path in workflow_paths:
         content = workflow_path.read_text(encoding="utf-8")
         for private_path in private_route_tokens:
