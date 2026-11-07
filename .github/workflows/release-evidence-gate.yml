@@ -1,0 +1,103 @@
+name: Release Evidence Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/si_exchange_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: si_exchange_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d si_exchange_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run full suite with isolated PostgreSQL and Redis
+        id: test_suite
+        continue-on-error: true
+        run: pytest -q
+      - name: Write candidate evidence
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.test_suite.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          outcome = os.environ.get("TEST_OUTCOME", "unknown")
+          evidence = {
+              "schema": "aion.si-exchange.release-evidence.v1",
+              "candidate_sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "test_suite_outcome": outcome,
+              "release_gate": "pass" if outcome == "success" else "fail",
+              "database_services": {
+                  "postgresql": "ephemeral-ci-service",
+                  "redis": "ephemeral-ci-service-db-15"
+              },
+              "mode": "simulation_only",
+              "production_deployment_verified": False
+          }
+          Path("release-evidence.json").write_text(
+              json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce release gate
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.test_suite.outcome }}
+        run: |
+          test "$TEST_OUTCOME" = "success" || {
+            echo "Release gate failed: full suite did not pass."
+            exit 1
+          }
